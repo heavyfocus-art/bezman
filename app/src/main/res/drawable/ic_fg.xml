@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- bells -->
+    <path
+        android:fillColor="#FF7A59"
+        android:pathData="M30,44 A11,11 0 0,1 44,30 Z" />
+    <path
+        android:fillColor="#FF7A59"
+        android:pathData="M78,44 A11,11 0 0,0 64,30 Z" />
+    <!-- legs -->
+    <path
+        android:strokeColor="#FFD166"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M40,76 L35,82 M68,76 L73,82" />
+    <!-- face -->
+    <path
+        android:fillColor="#FFD166"
+        android:pathData="M54,35 A22,22 0 1,1 53.99,35 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,40 A17,17 0 1,1 53.99,40 Z" />
+    <!-- hands -->
+    <path
+        android:strokeColor="#2B2160"
+        android:strokeWidth="4"
+        android:strokeLineCap="round"
+        android:pathData="M54,57 L54,46 M54,57 L62,61" />
+    <!-- check spark -->
+    <path
+        android:fillColor="#3DDC97"
+        android:pathData="M54,54 A3,3 0 1,1 53.99,54 Z" />
+</vector>

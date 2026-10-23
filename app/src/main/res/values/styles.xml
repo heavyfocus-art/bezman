@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#2B2160</item>
+        <item name="android:navigationBarColor">#F6F3FF</item>
+        <item name="android:windowBackground">@color/bg</item>
+    </style>
+    <style name="AlarmTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#2B2160</item>
+        <item name="android:windowBackground">@color/night</item>
+    </style>
+    <color name="bg">#F6F3FF</color>
+    <color name="night">#2B2160</color>
+    <color name="icon_bg">#2B2160</color>
+</resources>
