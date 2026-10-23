@@ -3,8 +3,13 @@ package com.heavyfocus.bezman;
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.provider.MediaStore;
+import android.widget.Toast;
 import android.database.Cursor;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
@@ -55,6 +60,7 @@ public class MainActivity extends Activity {
         super.onResume();
         current = new WeakReference<>(this);
         Sync.syncAsync(this);
+        LiveService.start(this);
         refreshUi();
     }
 
@@ -64,11 +70,83 @@ public class MainActivity extends Activity {
         if (current.get() == this) current = new WeakReference<>(null);
     }
 
-    static final int REQ_RINGTONE = 11, REQ_SONG = 12;
+    static final int REQ_RINGTONE = 11, REQ_SONG = 12, REQ_PHOTO = 13;
+    String photoTask = "", photoOcc = "";
+    Uri cameraUri = null;
+
+    /** mode: "camera" or "gallery". The picture is attached when she marks the task done. */
+    void startPhoto(String taskId, String occ, String mode) {
+        photoTask = taskId;
+        photoOcc = occ;
+        cameraUri = null;
+        try {
+            if ("camera".equals(mode)) {
+                ContentValues cv = new ContentValues();
+                cv.put(MediaStore.Images.Media.DISPLAY_NAME, "bezman_" + System.currentTimeMillis() + ".jpg");
+                cv.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+                if (Build.VERSION.SDK_INT >= 29) cv.put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Bezman");
+                cameraUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cv);
+                Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+                i.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
+                i.setClipData(ClipData.newRawUri("", cameraUri));
+                i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivityForResult(i, REQ_PHOTO);
+            } else {
+                Intent i = new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE);
+                startActivityForResult(Intent.createChooser(i, "בחירת תמונה"), REQ_PHOTO);
+            }
+        } catch (Exception e) {
+            if ("camera".equals(mode)) startPhoto(taskId, occ, "gallery");
+        }
+    }
+
+    void onPhoto(int resultCode, Intent data) {
+        Uri u = null;
+        if (resultCode == RESULT_OK) {
+            if (data != null && data.getData() != null) u = data.getData();
+            else u = cameraUri;
+        }
+        final Uri src = u;
+        final String task = photoTask, occ = photoOcc;
+        final Uri cam = cameraUri;
+        if (src == null) {
+            if (cam != null) {
+                try {
+                    getContentResolver().delete(cam, null, null);
+                } catch (Exception ignored) {
+                }
+            }
+            return;
+        }
+        final Context ac = getApplicationContext();
+        new Thread(() -> {
+            byte[] jpg = Photos.compress(ac, src);
+            if (jpg == null) {
+                runOnUiThread(() -> Toast.makeText(ac, "לא הצלחתי לקרוא את התמונה, נסי שוב", Toast.LENGTH_LONG).show());
+                return;
+            }
+            String logId = "task:" + task + ":" + occ;
+            Photos.save(ac, logId, jpg);
+            int pts = Store.taskDone(ac, task, occ, true);
+            if (pts < 0) return;
+            Notify.cancel(ac, "tk:" + task + ":" + occ);
+            runOnUiThread(() -> {
+                try {
+                    web.evaluateJavascript("window.onPhotoSent && window.onPhotoSent()", null);
+                } catch (Exception ignored) {
+                }
+            });
+            Photos.upload(ac, logId);
+        }).start();
+    }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PHOTO) {
+            onPhoto(resultCode, data);
+            return;
+        }
         if (resultCode != RESULT_OK || data == null) return;
         Uri u = null;
         String name = "";

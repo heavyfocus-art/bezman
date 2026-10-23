@@ -28,6 +28,7 @@ public final class Sched {
     public static final String LEAVE_CHECK = "LEAVE_CHECK"; // 10 min after leave time
     public static final String TASK_SOON = "TASK_SOON"; // 30 min before task due
     public static final String TASK_DUE = "TASK_DUE";   // task due
+    public static final String TASK_END = "TASK_END";   // end of the day: not marked = not done
 
     public static final class T {
         public final long time;
@@ -87,6 +88,7 @@ public final class Sched {
                 String title = k.optString("title");
                 out.add(new T(due - 30 * U.MIN, TASK_SOON, k.optString("id"), occ, title, due));
                 out.add(new T(due, TASK_DUE, k.optString("id"), occ, title, due));
+                out.add(new T(U.at(d, 23 * 60 + 59), TASK_END, k.optString("id"), occ, title, due));
             }
             d.add(Calendar.DAY_OF_MONTH, 1);
         }
@@ -202,16 +204,23 @@ public final class Sched {
                 if (!Store.has(all, "left:" + t.id + ":" + t.occ)) Store.leaveMissed(c, t.id, t.occ, t.title);
                 break;
             case TASK_SOON:
-                if (!Store.has(all, "task:" + t.id + ":" + t.occ)) {
+            case TASK_DUE: {
+                if (!Store.taskOpen(all, t.id, t.occ)) break;
+                JSONObject task = all.optJSONObject(t.id);
+                boolean photo = task != null && task.optBoolean("photo");
+                String act = photo ? null : "task";
+                if (TASK_SOON.equals(t.type)) {
                     Notify.remind(c, "tk:" + t.id + ":" + t.occ, "📝 עוד חצי שעה: " + t.title,
-                            "לסיים עד " + U.hhmm(t.extra) + " ולקבל את כל הנקודות", "task", t.id, t.occ);
+                            "לסיים עד " + U.hhmm(t.extra) + " ולקבל את כל הנקודות" + (photo ? " · צריך תמונה 📷" : ""),
+                            act, t.id, t.occ);
+                } else {
+                    Notify.remind(c, "tk:" + t.id + ":" + t.occ, "⏰ הגיע הזמן: " + t.title,
+                            photo ? "מצלמים ומסמנים \"בוצע\" באפליקציה 📷" : "סיימת? לוחצים \"בוצע\"", act, t.id, t.occ);
                 }
                 break;
-            case TASK_DUE:
-                if (!Store.has(all, "task:" + t.id + ":" + t.occ)) {
-                    Notify.remind(c, "tk:" + t.id + ":" + t.occ, "⏰ הגיע הזמן: " + t.title,
-                            "סיימת? לוחצים \"סיימתי\"", "task", t.id, t.occ);
-                }
+            }
+            case TASK_END:
+                if (Store.taskOpen(all, t.id, t.occ)) Store.taskMissed(c, t.id, t.occ, true);
                 break;
             default:
                 break;

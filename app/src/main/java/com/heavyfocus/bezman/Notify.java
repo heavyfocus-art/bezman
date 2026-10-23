@@ -69,7 +69,7 @@ public final class Notify {
                     .putExtra("what", what).putExtra("ref", ref).putExtra("occ", occ).putExtra("key", key);
             PendingIntent pi = PendingIntent.getBroadcast(c, nid(key), i,
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-            String label = "left".equals(what) ? "יצאתי ✅" : "סיימתי ✅";
+            String label = "left".equals(what) ? "יצאתי ✅" : "בוצע ✅";
             b.addAction(new Notification.Action.Builder(null, label, pi).build());
         }
         try {
@@ -84,6 +84,23 @@ public final class Notify {
                 .setContentTitle(title + " \u200E+" + pts + " ⭐")
                 .setContentText("כל הכבוד! ממשיכים ככה")
                 .setColor(0xFF3DDC97)
+                .setContentIntent(openApp(c))
+                .setAutoCancel(true)
+                .setTimeoutAfter(15_000)
+                .build();
+        try {
+            nm(c).notify(nid(key), n);
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Short confirmation on her phone: the task went to her parents for approval. */
+    public static void sent(Context c, String key) {
+        Notification n = new Notification.Builder(c, CH_FAMILY)
+                .setSmallIcon(R.drawable.ic_notif)
+                .setContentTitle("נשלח להורים לאישור 💌")
+                .setContentText("הנקודות יתווספו כשההורים יאשרו")
+                .setColor(0xFF6C4BF5)
                 .setContentIntent(openApp(c))
                 .setAutoCancel(true)
                 .setTimeoutAfter(15_000)
@@ -115,6 +132,33 @@ public final class Notify {
         }
     }
 
+    /** Parent notification with "approve" / "not approved" buttons for a task she marked done. */
+    static void approval(Context c, String logId, String key, String title, String text) {
+        if (!Store.markNotified(c, key)) return;
+        Notification.Builder b = new Notification.Builder(c, CH_FAMILY)
+                .setSmallIcon(R.drawable.ic_notif)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(new Notification.BigTextStyle().bigText(text))
+                .setColor(0xFF6C4BF5)
+                .setContentIntent(openApp(c))
+                .setAutoCancel(true);
+        String nkey = "appr:" + logId;
+        for (int k = 0; k < 2; k++) {
+            boolean ok = k == 0;
+            Intent i = new Intent(c, AlarmReceiver.class).setAction(AlarmReceiver.ACT)
+                    .putExtra("what", ok ? "approve" : "reject").putExtra("ref", logId).putExtra("occ", "")
+                    .putExtra("key", nkey);
+            PendingIntent pi = PendingIntent.getBroadcast(c, nid(nkey) + k, i,
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            b.addAction(new Notification.Action.Builder(null, ok ? "לאשר ✅" : "לא אושר ❌", pi).build());
+        }
+        try {
+            nm(c).notify(nid(nkey), b.build());
+        } catch (Exception ignored) {
+        }
+    }
+
     /** Shows notifications about things other family members did. */
     public static void onRemote(Context c, List<JSONObject[]> changes) {
         long now = System.currentTimeMillis();
@@ -129,6 +173,33 @@ public final class Notify {
             String kind = n.optString("kind");
             String id = n.optString("id");
             String title = n.optString("title");
+            String type0 = n.optString("type");
+            boolean taskLog = "log".equals(kind) && ("task_done".equals(type0) || "task_missed".equals(type0));
+            boolean sameState = old != null && old.optString("type").equals(type0)
+                    && old.optString("status").equals(n.optString("status"));
+            if (taskLog) {
+                if (sameState) continue;
+                String st = n.optString("status");
+                int pts = n.optInt("pts");
+                if (!child) {
+                    if ("task_done".equals(type0) && "pending".equals(st)) {
+                        approval(c, id, id + ":p:" + n.optLong("upd"), "📝 " + kid + " סימנה בוצע: " + title,
+                                (n.optBoolean("photo") ? "📷 עם תמונה · " : "") + "מחכה לאישור שלך ("
+                                        + n.optInt("claim") + " ⭐)");
+                    } else if ("task_missed".equals(type0)) {
+                        family(c, id + ":m", "❌ " + kid + (n.optBoolean("auto") ? " לא סימנה עד סוף היום: " : " סימנה לא בוצע: ") + title,
+                                "‎" + pts + " ⭐");
+                    }
+                } else if ("task_done".equals(type0) && old != null) {
+                    String who = n.optString("approvedBy", "ההורים");
+                    if ("approved".equals(st)) {
+                        family(c, id + ":ok:" + n.optLong("upd"), "✅ " + who + " אישר/ה: " + title, "קיבלת ‎+" + pts + " ⭐");
+                    } else if ("rejected".equals(st)) {
+                        family(c, id + ":no:" + n.optLong("upd"), "↩️ המשימה לא אושרה: " + title, "אפשר לבצע ולסמן שוב");
+                    }
+                }
+                continue;
+            }
             if (!child) {
                 if ("log".equals(kind) && old == null) {
                     String type = n.optString("type");

@@ -32,7 +32,8 @@ public class Bridge {
     public String state() {
         JSONObject me = U.obj("role", Store.role(c), "name", Store.name(c), "dev", Store.dev(c),
                 "code", Store.code(c), "lastSync", Store.getLong(c, "lastSync"),
-                "ringtone", Store.getStr(c, "ringtoneName"));
+                "ringtone", Store.getStr(c, "ringtoneName"),
+                "live", Store.p(c).getBoolean("live", true));
         return U.obj("items", Store.items(c), "me", me, "version", BuildConfig.VERSION_NAME,
                 "apk", APK_URL, "now", System.currentTimeMillis()).toString();
     }
@@ -53,6 +54,7 @@ public class Bridge {
         Store.setup(c, role, name.trim(), normCode(code));
         Store.afterLocalChange(c);
         Sync.syncAsync(c);
+        LiveService.start(c);
         return state();
     }
 
@@ -80,9 +82,27 @@ public class Bridge {
     @JavascriptInterface
     public int action(String what, String ref, String occ) {
         int pts = -1;
-        if ("left".equals(what)) pts = Store.left(c, ref, occ);
-        else if ("task".equals(what)) pts = Store.taskDone(c, ref, occ);
-        Notify.cancel(c, ("left".equals(what) ? "ev:" : "tk:") + ref + ":" + occ);
+        switch (what) {
+            case "left":
+                pts = Store.left(c, ref, occ);
+                Notify.cancel(c, "ev:" + ref + ":" + occ);
+                break;
+            case "task":
+                pts = Store.taskDone(c, ref, occ, false);
+                Notify.cancel(c, "tk:" + ref + ":" + occ);
+                break;
+            case "missed":
+                pts = Store.taskMissed(c, ref, occ, false);
+                Notify.cancel(c, "tk:" + ref + ":" + occ);
+                break;
+            case "approve":
+            case "reject":
+                pts = Store.approve(c, ref, "approve".equals(what)) ? 1 : -1;
+                Notify.cancel(c, "appr:" + ref);
+                break;
+            default:
+                break;
+        }
         return pts;
     }
 
@@ -142,6 +162,25 @@ public class Bridge {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    /** Take / choose a photo, then the task is marked done with it. mode: "camera" | "gallery". */
+    @JavascriptInterface
+    public void takePhoto(String taskId, String occ, String mode) {
+        a.runOnUiThread(() -> a.startPhoto(taskId, occ, mode));
+    }
+
+    /** The task photo as an image the screen can show, or "" if not on this phone (yet). */
+    @JavascriptInterface
+    public String photo(String logId) {
+        return Photos.dataUrl(c, logId);
+    }
+
+    @JavascriptInterface
+    public void setLive(boolean on) {
+        Store.p(c).edit().putBoolean("live", on).apply();
+        if (on) LiveService.start(c);
+        else LiveService.stopIt(c);
     }
 
     /** Opens the phone's own list of alarm sounds. */
@@ -213,6 +252,7 @@ public class Bridge {
 
     @JavascriptInterface
     public String reset() {
+        LiveService.stopIt(c);
         Store.reset(c);
         Sched.reschedule(c);
         return state();

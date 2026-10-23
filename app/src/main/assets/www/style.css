@@ -183,3 +183,12 @@ label.f { display: block; font-size: 14px; font-weight: 700; color: var(--ink2);
 @keyframes drop { to { transform: translateY(110vh) rotate(260deg); opacity: .2; } }
 .pop { animation: pop .5s; }
 @keyframes pop { 0% { transform: scale(1) } 40% { transform: scale(1.15) } 100% { transform: scale(1) } }
+
+/* ---------- task buttons & photos ---------- */
+.btns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.btns .btn { flex: 1; min-width: 110px; }
+.check.x { background: var(--red-soft); border-color: var(--red); color: var(--red); font-weight: 800; }
+.check.wait { border-color: var(--sun); background: var(--sun-soft); font-size: 14px; }
+.thumbwrap { flex: none; cursor: pointer; }
+.thumb { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; display: block; box-shadow: 0 2px 8px rgba(43,33,96,.15); }
+.thumb.none { display: grid; place-items: center; text-align: center; background: #f1eff8; color: var(--muted); font-size: 11px; line-height: 1.3; }

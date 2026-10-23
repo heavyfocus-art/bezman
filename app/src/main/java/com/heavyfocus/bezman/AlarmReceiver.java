@@ -27,15 +27,22 @@ public class AlarmReceiver extends BroadcastReceiver {
                     String occ = in.getStringExtra("occ");
                     String key = in.getStringExtra("key");
                     int pts = -1;
-                    if ("left".equals(what)) pts = Store.left(c, id, occ);
-                    else if ("task".equals(what)) pts = Store.taskDone(c, id, occ);
                     Notify.cancel(c, key);
-                    if (pts > 0) Notify.praise(c, key, pts, "left".equals(what) ? "יצאת! 🚀" : "סיימת! 💪");
+                    if ("left".equals(what)) {
+                        pts = Store.left(c, id, occ);
+                        if (pts > 0) Notify.praise(c, key, pts, "יצאת! 🚀");
+                    } else if ("task".equals(what)) {
+                        pts = Store.taskDone(c, id, occ, false);
+                        if (pts > 0) Notify.sent(c, key);
+                    } else if ("approve".equals(what) || "reject".equals(what)) {
+                        Store.approve(c, id, "approve".equals(what));
+                    }
                     Sync.flush(c);
                 } else {
                     // boot, app update, time change
                     Sched.reschedule(c);
                     SyncJob.schedule(c);
+                    LiveService.start(c);
                 }
             } catch (Exception ignored) {
             } finally {

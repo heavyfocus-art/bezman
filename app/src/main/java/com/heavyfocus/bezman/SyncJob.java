@@ -32,6 +32,7 @@ public class SyncJob extends JobService {
             try {
                 Sync.syncNow(c);
                 Sched.reschedule(c);
+                LiveService.start(c);
             } catch (Exception ignored) {
             }
             jobFinished(params, false);

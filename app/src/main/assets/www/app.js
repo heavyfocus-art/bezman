@@ -64,6 +64,7 @@ function load() {
   try { S = JSON.parse(B.state()); } catch (e) { S = { items: {}, me: {} }; }
   render();
 }
+window.onPhotoSent = () => { load(); confetti(); toast('התמונה נשלחה להורים לאישור 📷'); };
 window.onNative = () => { if (!MODAL) load(); else { try { S = JSON.parse(B.state()); } catch (e) {} } };
 window.onBack = () => {
   if (MODAL) { closeModal(); return true; }
@@ -145,14 +146,77 @@ function rowHtml(r, child, now) {
       ${btn || `<div class="time">${tHM(r.leave)}</div>`}</div>`;
   }
   // task
-  const done = !!r.log;
-  const canTick = child && !done && r.occ === occOf(new Date());
-  let st = done ? `<span class="pill ok">${child ? 'סיימת' : 'סיימה'} ב-${tHM(r.log.at)} · \u200E+${r.log.pts}⭐</span>`
-    : (now > r.t ? `<span class="pill warn">עבר הזמן</span>` : `עד ${esc(it.time || 'סוף היום')} · ${it.pts || 5}⭐`);
-  return `<div class="row ${done ? 'done' : ''}">
-    ${canTick ? `<button class="check" data-act="task" data-ref="${esc(it.id)}" data-occ="${r.occ}"></button>` : `<div class="check ${done ? 'on' : ''}">${done ? '✓' : ''}</div>`}
-    <div class="body"><div class="t1">${esc(it.title)}</div><div class="t2">${st}</div></div>
-    <div class="time">${esc(it.time || '')}</div></div>`;
+  const ts = taskState(r.log);
+  const canMark = child && r.occ === occOf(new Date()) && (ts === 'open' || ts === 'rejected');
+  const base = it.pts || 5;
+  let st, mark;
+  if (ts === 'approved') {
+    st = `<span class="pill ok">אושר${r.log.approvedBy && !child ? ' ע״י ' + esc(r.log.approvedBy) : ''} · ‎+${r.log.pts}⭐</span>`;
+    mark = `<div class="check on">✓</div>`;
+  } else if (ts === 'pending') {
+    st = `<span class="pill wait">⏳ ${child ? 'סימנת בוצע ·' : ''} מחכה לאישור${child ? '' : ' שלך'}</span>`;
+    mark = `<div class="check wait">⏳</div>`;
+  } else if (ts === 'missed') {
+    st = `<span class="pill warn">${r.log.auto ? 'לא סומן עד סוף היום' : 'לא בוצע'} · ‎${r.log.pts}⭐</span>`;
+    mark = `<div class="check x">✕</div>`;
+  } else {
+    st = ts === 'rejected' ? `<span class="pill warn">↩️ לא אושר – אפשר לבצע ולסמן שוב</span>`
+      : (now > r.t ? `<span class="pill warn">עבר הזמן</span> ${base}⭐` : `עד ${esc(it.time || 'סוף היום')} · ${base}⭐`);
+    if (it.photo) st += ` <span class="small">· 📷 צריך תמונה</span>`;
+    mark = `<div class="check"></div>`;
+  }
+  const btns = canMark ? `<div class="btns">
+      <button class="btn mint small" data-done="${esc(it.id)}" data-occ="${r.occ}">${it.photo ? '📷 ' : ''}בוצע ✅</button>
+      <button class="btn danger small" data-notdone="${esc(it.id)}" data-occ="${r.occ}">לא בוצע ✕</button></div>` : '';
+  const photo = r.log && r.log.photo ? `<div class="thumbwrap" data-photo="${esc(r.log.id)}"></div>` : '';
+  return `<div class="row ${ts === 'approved' || ts === 'missed' ? 'done' : ''}">
+    ${mark}
+    <div class="body"><div class="t1">${esc(it.title)}</div><div class="t2">${st}</div>${btns}</div>
+    ${photo || `<div class="time">${esc(it.time || '')}</div>`}</div>`;
+}
+
+/** open | pending | approved | rejected | missed */
+function taskState(log) {
+  if (!log) return 'open';
+  if (log.type === 'task_missed') return 'missed';
+  if (log.status === 'pending') return 'pending';
+  if (log.status === 'rejected') return 'rejected';
+  return 'approved';
+}
+const penalty = t => Math.max(1, Math.floor((t.pts || 5) / 2));
+function pendingTasks() {
+  return list('log').filter(l => l.type === 'task_done' && l.status === 'pending').sort((a, b) => (a.at || 0) - (b.at || 0));
+}
+
+function approvalsCard() {
+  const p = pendingTasks();
+  if (!p.length) return '';
+  return `<div class="sec-title"><h2>📝 מחכה לאישור שלך (${p.length})</h2></div>` + p.map(l => {
+    const d = l.occ === occOf(new Date()) ? 'היום' : 'ביום ' + new Date(at(l.occ, 0)).toLocaleDateString('he-IL', { weekday: 'long' });
+    return `<div class="card" style="border:2px solid var(--violet-soft)">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="flex:1"><b>${esc(l.title)}</b>
+          <div class="small muted">${esc(kidName())} סימנה בוצע ${d} ב-${tHM(l.at)}${l.late ? ' (אחרי הזמן)' : ''} · ${l.claim || 0}⭐</div></div>
+        ${l.photo ? `<div class="thumbwrap" data-photo="${esc(l.id)}"></div>` : ''}
+      </div>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn mint" data-approve="${esc(l.id)}">לאשר ✅</button>
+        <button class="btn light" data-reject="${esc(l.id)}">לא אושר ↩️</button>
+      </div></div>`;
+  }).join('');
+}
+
+function fillPhotos() {
+  document.querySelectorAll('[data-photo]').forEach(el => {
+    const src = B.photo ? B.photo(el.dataset.photo) : '';
+    el.innerHTML = src ? `<img class="thumb" src="${src}" alt="">` : `<div class="thumb none">📷<br>בדרך…</div>`;
+    el.onclick = (e) => {
+      e.stopPropagation();
+      if (!src) return toast('התמונה עוד לא הגיעה לטלפון הזה');
+      openModal(`<img src="${src}" style="width:100%;border-radius:16px" alt=""><div class="actions"><button class="btn light" data-c="no">סגירה</button></div>`,
+        root => { root.querySelector('[data-c=no]').onclick = closeModal; });
+    };
+  });
 }
 
 function nextUp(now) {
@@ -165,7 +229,7 @@ function nextUp(now) {
       return { r, t: r.leave, what: '🎒 ' + r.it.title,
         sub: `יוצאים ב-${tHM(r.leave)} · מתחיל ב-${r.it.start}` + (prep ? ` · להתחיל להתארגן ב-${tHM(r.prepAt)}` : ''), label: 'יוצאים בעוד' };
     }
-    if (r.type === 'task' && r.t > now - 3 * 3600000) return { r, t: r.t, what: '📝 ' + r.it.title, sub: `לסיים עד ${r.it.time}`, label: 'נשאר' };
+    if (r.type === 'task' && taskState(r.log) === 'open' && r.t > now - 3 * 3600000) return { r, t: r.t, what: '📝 ' + r.it.title, sub: `לסיים עד ${r.it.time}`, label: 'נשאר' };
   }
   const tm = agenda(dayAdd(new Date(), 1)).find(r => r.type === 'alarm');
   if (tm) return { r: tm, t: tm.t, what: '⏰ השכמה מחר', sub: `השעון יצלצל ב-${tm.it.time}`, label: 'בעוד' };
@@ -186,12 +250,13 @@ function render() {
   const pending = list('redeem').filter(r => r.status === 'pending').length;
   app.innerHTML = body + `
   <nav>
-    ${navBtn('today', '🏠', 'היום')}
+    ${navBtn('today', '🏠', 'היום', !isChild() ? pendingTasks().length : 0)}
     ${navBtn('plan', '🗓️', 'לו״ז')}
     ${navBtn('rewards', '🎁', 'פרסים', !isChild() && pending ? pending : 0)}
     ${navBtn('settings', '⚙️', 'הגדרות')}
   </nav>`;
   bindCommon();
+  fillPhotos();
   if (TAB === 'today') tickTimer = setInterval(() => { if (!MODAL && TAB === 'today') render(); }, 30000);
 }
 function navBtn(id, ico, txt, badge) {
@@ -207,9 +272,9 @@ function hero(title, sub) {
     <div class="top"><div><h1>${title}</h1><div class="date">${sub}</div></div>
     <button class="sync" data-sync="1">🔄 ${ls == null ? 'סנכרון' : ls < 1 ? 'עכשיו' : 'לפני ' + ls + ' דק׳'}</button></div>
     <div class="chips">
-      <div class="chip"><b>${sc.pts}</b><span>⭐ נקודות</span></div>
+      <div class="chip"><b>\u200E${sc.pts}</b><span>⭐ נקודות</span></div>
       <div class="chip"><b>${sc.streak}</b><span>🔥 ימים ברצף</span></div>
-      <div class="chip"><b>\u200E+${todayPts}</b><span>✨ היום</span></div>
+      <div class="chip"><b>\u200E${todayPts >= 0 ? '+' : ''}${todayPts}</b><span>✨ היום</span></div>
     </div></div>`;
 }
 function dateLine() {
@@ -266,7 +331,7 @@ function weekCard() {
   const vals = days.map(d => logs.filter(l => l.occ === occOf(d)).reduce((s, l) => s + (l.pts || 0), 0));
   const max = Math.max(10, ...vals);
   return `<div class="sec-title"><h2>7 ימים אחרונים</h2></div><div class="card"><div class="week">
-    ${days.map((d, i) => `<div class="col"><div class="n">${vals[i] || ''}</div><div class="b" style="height:${Math.round(vals[i] / max * 80)}%"></div><div class="d">${DAYS[d.getDay()]}</div></div>`).join('')}
+    ${days.map((d, i) => `<div class="col"><div class="n">${vals[i] ? '\u200E' + vals[i] : ''}</div><div class="b" style="height:${Math.max(0, Math.round(vals[i] / max * 80))}%"></div><div class="d">${DAYS[d.getDay()]}</div></div>`).join('')}
   </div></div>`;
 }
 
@@ -280,13 +345,14 @@ function parentToday() {
   return hero(`${esc(kid)} היום`, dateLine()) + `<main>
     ${permBanner()}
     ${!joined ? `<div class="card"><b>📲 ${esc(kid)} עוד לא מחוברת</b><p class="muted small">מתקינים את האפליקציה בטלפון שלה, בוחרים "אני הילדה" ומקלידים את קוד המשפחה.</p><button class="btn block" data-share="1">שליחת הקוד בוואטסאפ</button></div>` : ''}
+    ${approvalsCard()}
     ${pending.map(redeemCard).join('')}
     <div class="sec-title"><h2>מה קרה היום</h2><button class="add" data-new="task">+ משימה</button></div>
     <div class="card">${rows.length ? rows.map(r => rowHtml(r, false, now)).join('') : `<div class="empty"><div class="e">🗓️</div>אין כלום בלו״ז להיום.<br>מוסיפים בלשונית "לו״ז"</div>`}</div>
     ${gifts}
     ${weekCard()}
     ${tomorrowCard(false)}
-    <p class="muted small center">העדכונים מהטלפון שלה מגיעים בדרך כלל תוך כרבע שעה</p>
+    <p class="muted small center">${S.me.live ? '⚡ עדכונים מיידיים פועלים' : 'העדכונים מהטלפון שלה מגיעים בדרך כלל תוך כרבע שעה'}</p>
   </main>`;
 }
 
@@ -342,7 +408,7 @@ function rewardsScreen() {
   const pending = reqs.filter(r => r.status === 'pending');
   const stTxt = { pending: ['wait', 'מחכה לאישור'], approved: ['ok', 'אושר 🎉'], declined: ['warn', 'לא אושר'] };
   return `<div class="hero" style="padding-bottom:18px"><div class="top"><div><h1>פרסים 🎁</h1><div class="date">${child ? 'אוספים נקודות ומממשים' : 'קובעים פרסים ומאשרים בקשות'}</div></div></div>
-    <div class="big-score"><b>${sc.pts}</b> ⭐</div></div><main>
+    <div class="big-score"><b>\u200E${sc.pts}</b> ⭐</div></div><main>
     ${!child ? pending.map(redeemCard).join('') : ''}
     <div class="sec-title"><h2>הפרסים</h2>${!child ? `<button class="add" data-new="reward">+ פרס חדש</button>` : ''}</div>
     ${rewards.length ? `<div class="rewards">${rewards.map(r => {
@@ -362,7 +428,8 @@ function rewardsScreen() {
       <b style="color:var(--ink)">איך מרוויחים נקודות?</b><br>
       ☀️ קמה בלי נודניק: 10 · עם נודניק: 5<br>
       🚪 יוצאת בזמן: 10 · עד 10 דק׳ איחור: 5<br>
-      ✅ משימה בזמן: כל הנקודות · באיחור: חצי<br>
+      ✅ משימה שההורים אישרו: כל הנקודות · באיחור: חצי<br>
+      ❌ משימה שלא בוצעה: מינוס חצי מהנקודות שלה<br>
       🔥 כל 5 ימים ברצף של השכמה בזמן: בונוס 15
     </div>
   </main>`;
@@ -403,6 +470,12 @@ function settingsScreen() {
     ${child ? `<div class="sec-title"><h2>⏰ בדיקה</h2></div>
     <div class="card"><p class="small muted" style="margin-top:0">לוחצים, נועלים את המסך ומחכים 10 שניות. השעון צריך לצלצל ולהיפתח על כל המסך.</p>
       <button class="btn coral block" data-test="1">בדיקת שעון מעורר</button></div>` : ''}
+
+    <div class="sec-title"><h2>⚡ עדכונים מיידיים</h2></div>
+    <div class="card"><div style="display:flex;align-items:center;gap:12px">
+      <div style="flex:1"><b>${S.me.live ? 'פועל – כל שינוי מגיע לכל הטלפונים תוך שניות' : 'כבוי – עדכון כל רבע שעה'}</b>
+      <div class="small muted">כשזה פועל מופיעה למעלה התראה קטנה וקבועה "בזמן מחובר למשפחה" – זה תקין.</div></div>
+      <button class="toggle ${S.me.live ? 'on' : ''}" data-live="1"></button></div></div>
 
     <div class="sec-title"><h2>🔄 סנכרון</h2></div>
     <div class="card"><div class="small muted">סנכרון אחרון: ${ls}</div>
@@ -462,6 +535,47 @@ const val = sel => { const e = $(sel); return e ? e.value : ''; };
 function bindCommon() {
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { TAB = b.dataset.tab; render(); window.scrollTo(0, 0); });
   document.querySelectorAll('[data-sync]').forEach(b => b.onclick = () => { B.syncNow(); toast('מסנכרן…'); });
+  document.querySelectorAll('[data-done]').forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    const t = item(b.dataset.done), occ = b.dataset.occ;
+    if (!t) return;
+    if (t.photo) {
+      openModal(`<h3>📷 צריך תמונה</h3><p class="muted">כדי לסמן "${esc(t.title)}" כבוצע, מצלמים או בוחרים תמונה. היא תישלח להורים לאישור.</p>
+        <div class="actions"><button class="btn" data-pm="camera">📸 לצלם</button><button class="btn light" data-pm="gallery">🖼️ מהגלריה</button></div>`, root => {
+        root.querySelectorAll('[data-pm]').forEach(x => x.onclick = () => { MODAL = null; $('#modal-root').innerHTML = ''; B.takePhoto(t.id, occ, x.dataset.pm); render(); });
+      });
+      return;
+    }
+    const pts = B.action('task', t.id, occ);
+    load();
+    if (pts > 0) { confetti(); toast(`נשלח להורים לאישור 💌 \u200E+${pts}⭐ אחרי אישור`); }
+  });
+  document.querySelectorAll('[data-notdone]').forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    const t = item(b.dataset.notdone), occ = b.dataset.occ;
+    if (!t) return;
+    confirmBox(`לסמן "${t.title}" כלא בוצע?`, `יורדות ${penalty(t)} ⭐ (חצי מהנקודות של המשימה). ההורים יקבלו עדכון.`, 'כן, לא בוצע', () => {
+      B.action('missed', t.id, occ);
+      load();
+      toast(`סומן לא בוצע · \u200E-${penalty(t)}⭐`);
+    }, true);
+  });
+  document.querySelectorAll('[data-approve],[data-reject]').forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    const ok = !!b.dataset.approve;
+    const id = b.dataset.approve || b.dataset.reject;
+    const l = item(id);
+    B.action(ok ? 'approve' : 'reject', id, '');
+    load();
+    if (ok) { confetti(); toast(`אושר ✅ ${kidName()} קיבלה \u200E+${l ? l.claim || 0 : 0}⭐`); }
+    else toast('הוחזר אליה – היא יכולה לבצע ולסמן שוב');
+  });
+  document.querySelectorAll('[data-live]').forEach(b => b.onclick = () => {
+    const on = !S.me.live;
+    B.setLive(on);
+    load();
+    toast(on ? 'עדכונים מיידיים הופעלו ⚡' : 'עדכונים כל רבע שעה');
+  });
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
     const pts = B.action(b.dataset.act, b.dataset.ref, b.dataset.occ);
@@ -580,7 +694,11 @@ function readWhen(root, draft, out) {
 function openEditor(kind, it) {
   const isNew = !it;
   const base = it ? JSON.parse(JSON.stringify(it)) : {};
-  const del = isNew ? '' : `<button class="btn danger" data-del="1">מחיקה</button>`;
+  if (kind === 'task' && isChild() && !isNew && it.by && it.by !== S.me.name) {
+    toast('את המשימה הזו קבעו ההורים – רק הם יכולים לשנות אותה');
+    return;
+  }
+  const del = isNew || (kind === 'task' && isChild()) ? '' : `<button class="btn danger" data-del="1">מחיקה</button>`;
   const today = occOf(new Date());
 
   if (kind === 'alarm') {
@@ -646,13 +764,14 @@ function openEditor(kind, it) {
   }
 
   if (kind === 'task') {
-    const d = { mode: (base.days && base.days.length) ? 'repeat' : 'once', days: base.days ? base.days.slice() : [], date: base.date || today, pts: base.pts || 5 };
+    const d = { mode: (base.days && base.days.length) ? 'repeat' : 'once', days: base.days ? base.days.slice() : [], date: base.date || today, pts: base.pts || 5, photo: base.photo ? 1 : 0 };
     openModal(`<h3>${isNew ? 'משימה חדשה' : 'עריכת משימה'}</h3>
       <label class="f" style="margin-top:0">מה צריך לעשות?</label><input class="in" id="f-title" placeholder="למשל: שיעורי בית במתמטיקה" value="${esc(base.title || '')}">
       ${whenFields(d)}
       <label class="f">עד איזו שעה?</label><input class="in time" type="time" id="f-time" value="${esc(base.time || '20:00')}">
       <label class="f">כמה נקודות?</label>${opts('pts', [3, 5, 10, 15, 20], d.pts, v => v + '⭐')}
-      <div class="hint">🔔 תזכורת חצי שעה לפני, ועוד אחת בזמן. בזמן = כל הנקודות, באיחור = חצי.</div>
+      <label class="f">📷 לבקש תמונה כשמסיימים?</label>${opts('photo', [0, 1], d.photo, v => v ? 'כן, עם תמונה' : 'בלי תמונה')}
+      <div class="hint">🔔 תזכורת חצי שעה לפני ובזמן. "בוצע" נשלח להורים לאישור – בזמן = כל הנקודות, באיחור = חצי. "לא בוצע" (או בלי סימון עד סוף היום) = מינוס חצי.</div>
       <div class="actions">${del}<button class="btn" data-save="1">שמירה</button></div>`, root => {
       bindPick(root, d);
       root.querySelector('[data-save]').onclick = () => {
@@ -663,7 +782,7 @@ function openEditor(kind, it) {
         const out = {};
         if (!readWhen(root, d, out)) return;
         MODAL = null; $('#modal-root').innerHTML = '';
-        save(Object.assign(base, out, { id: base.id || uid('tk'), kind: 'task', title, time, pts: d.pts }));
+        save(Object.assign(base, out, { id: base.id || uid('tk'), kind: 'task', title, time, pts: d.pts, photo: !!d.photo }));
         toast('המשימה נשמרה ✅');
       };
       bindDel(root, base);

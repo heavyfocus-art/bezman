@@ -70,6 +70,29 @@ public final class Sync {
         return Base64.encodeToString(all, Base64.NO_WRAP);
     }
 
+    static byte[] encryptBytes(String code, byte[] plain) throws Exception {
+        byte[] iv = new byte[12];
+        RND.nextBytes(iv);
+        Cipher ci = Cipher.getInstance("AES/GCM/NoPadding");
+        ci.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(sha("bezman-key:" + code), "AES"), new GCMParameterSpec(128, iv));
+        byte[] ct = ci.doFinal(plain);
+        byte[] all = new byte[iv.length + ct.length];
+        System.arraycopy(iv, 0, all, 0, iv.length);
+        System.arraycopy(ct, 0, all, iv.length, ct.length);
+        return all;
+    }
+
+    static byte[] decryptBytes(String code, byte[] all) {
+        try {
+            Cipher ci = Cipher.getInstance("AES/GCM/NoPadding");
+            ci.init(Cipher.DECRYPT_MODE, new SecretKeySpec(sha("bezman-key:" + code), "AES"),
+                    new GCMParameterSpec(128, all, 0, 12));
+            return ci.doFinal(all, 12, all.length - 12);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     static String decrypt(String code, String b64) {
         try {
             byte[] all = Base64.decode(b64, Base64.NO_WRAP);
@@ -257,6 +280,10 @@ public final class Sync {
                 }
             } catch (Exception ignored) {
             }
+        }
+        try {
+            Photos.catchUp(c);
+        } catch (Exception ignored) {
         }
         long since = System.currentTimeMillis() - Store.getLong(c, "lastSnapAt");
         if (wantSnap[0] || since > 6 * U.HOUR) snapshot(c);

@@ -273,22 +273,77 @@ public final class Store {
         return pts;
     }
 
-    /** She finished a task. */
-    public static int taskDone(Context c, String taskId, String occ) {
+    /** Can she still mark this task? (nothing recorded yet, or a parent sent it back) */
+    public static boolean taskOpen(JSONObject all, String taskId, String occ) {
+        JSONObject r = all.optJSONObject("task:" + taskId + ":" + occ);
+        return !U.alive(r) || "rejected".equals(r.optString("status"));
+    }
+
+    public static int taskBase(JSONObject t) {
+        return Math.max(1, t.optInt("pts", 5));
+    }
+
+    /** Points taken off when a task is not done: half the task's points (at least 1). */
+    public static int taskPenalty(JSONObject t) {
+        return Math.max(1, taskBase(t) / 2);
+    }
+
+    /**
+     * She marked a task as done. It waits for a parent's approval; the points are given on approval.
+     * Returns the points she will get if approved, or -1.
+     */
+    public static int taskDone(Context c, String taskId, String occ, boolean withPhoto) {
         JSONObject all = items(c);
         JSONObject t = all.optJSONObject(taskId);
         String id = "task:" + taskId + ":" + occ;
-        if (t == null || has(all, id)) return -1;
-        int base = Math.max(1, t.optInt("pts", 5));
+        if (t == null || !taskOpen(all, taskId, occ)) return -1;
+        int base = taskBase(t);
         int m = U.mins(t.optString("time"));
         long due = U.at(occ, m < 0 ? 23 * 60 + 59 : m);
         boolean onTime = System.currentTimeMillis() <= due;
-        int pts = onTime ? base : Math.max(1, base / 2);
-        JSONObject l = log(id, "task_done", taskId, occ, pts, t.optString("title"));
+        int claim = onTime ? base : Math.max(1, base / 2);
+        JSONObject l = log(id, "task_done", taskId, occ, 0, t.optString("title"));
+        U.put(l, "status", "pending");
+        U.put(l, "claim", claim);
         U.put(l, "late", !onTime);
+        U.put(l, "by", name(c));
+        if (withPhoto) {
+            U.put(l, "photo", true);
+            U.put(l, "photoBy", dev(c));
+        }
         upsertLocal(c, l);
         afterLocalChange(c);
-        return pts;
+        return claim;
+    }
+
+    /** Task not done: she pressed "לא בוצע", or the day ended without marking it. */
+    public static int taskMissed(Context c, String taskId, String occ, boolean auto) {
+        JSONObject all = items(c);
+        JSONObject t = all.optJSONObject(taskId);
+        String id = "task:" + taskId + ":" + occ;
+        if (t == null || !taskOpen(all, taskId, occ)) return 0;
+        int pen = taskPenalty(t);
+        JSONObject l = log(id, "task_missed", taskId, occ, -pen, t.optString("title"));
+        U.put(l, "status", "missed");
+        U.put(l, "auto", auto);
+        U.put(l, "by", name(c));
+        upsertLocal(c, l);
+        afterLocalChange(c);
+        return pen;
+    }
+
+    /** A parent approves (ok=true) or sends back (ok=false) a task she marked done. */
+    public static boolean approve(Context c, String logId, boolean ok) {
+        JSONObject r = get(c, logId);
+        if (!U.alive(r) || !"task_done".equals(r.optString("type"))) return false;
+        if (!"pending".equals(r.optString("status"))) return false;
+        U.put(r, "status", ok ? "approved" : "rejected");
+        U.put(r, "pts", ok ? r.optInt("claim", 0) : 0);
+        U.put(r, "approvedBy", name(c));
+        U.put(r, "decidedAt", System.currentTimeMillis());
+        upsertLocal(c, r);
+        afterLocalChange(c);
+        return true;
     }
 
     /** Automatic check: alarm rang 10 minutes ago and she did not stop it. */

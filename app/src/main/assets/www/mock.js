@@ -3,7 +3,7 @@
   if (window.Android) return;
   const K = 'bezman-mock';
   const load = () => { try { return JSON.parse(localStorage.getItem(K)) || {}; } catch (e) { return {}; } };
-  let D = Object.assign({ items: {}, me: { role: '', name: '', dev: 'browser01', code: '' } }, load());
+  let D = Object.assign({ items: {}, me: { role: '', name: '', dev: 'browser01', code: '', live: true } }, load());
   const persist = () => { try { localStorage.setItem(K, JSON.stringify(D)); } catch (e) {} };
   const pad = n => String(n).padStart(2, '0');
   const occOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -39,6 +39,11 @@
     newCode() { const a = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 10; i++) s += a[Math.floor(Math.random() * a.length)]; return s; },
     syncNow() {},
     action(what, ref, occ) {
+      if (what === 'approve' || what === 'reject') {
+        const l = D.items[ref]; if (!l || l.status !== 'pending') return -1;
+        const n = Object.assign({}, l, { status: what === 'approve' ? 'approved' : 'rejected', pts: what === 'approve' ? l.claim : 0, approvedBy: D.me.name });
+        put(n); score(); persist(); return 1;
+      }
       const it = D.items[ref]; if (!it) return -1;
       if (what === 'left') {
         const id = `left:${ref}:${occ}`; if (D.items[id]) return -1;
@@ -47,12 +52,20 @@
         put({ id, kind: 'log', type: 'left', ref, occ, pts, title: it.title, at: now, late: Math.max(0, Math.round((now - leave) / 60000)) });
         score(); persist(); return pts;
       }
-      if (what === 'task') {
-        const id = `task:${ref}:${occ}`; if (D.items[id]) return -1;
+      if (what === 'task' || what === 'photo') {
+        const id = `task:${ref}:${occ}`; const ex = D.items[id];
+        if (ex && !ex.del && ex.status !== 'rejected') return -1;
         const due = at(occ, mins(it.time) >= 0 ? mins(it.time) : 1439); const base = it.pts || 5;
-        const pts = Date.now() <= due ? base : Math.max(1, Math.floor(base / 2));
-        put({ id, kind: 'log', type: 'task_done', ref, occ, pts, title: it.title, at: Date.now(), late: Date.now() > due });
-        score(); persist(); return pts;
+        const claim = Date.now() <= due ? base : Math.max(1, Math.floor(base / 2));
+        put({ id, kind: 'log', type: 'task_done', status: 'pending', claim, ref, occ, pts: 0, title: it.title, at: Date.now(), late: Date.now() > due, photo: what === 'photo', by: D.me.name });
+        score(); persist(); return claim;
+      }
+      if (what === 'missed') {
+        const id = `task:${ref}:${occ}`; const ex = D.items[id];
+        if (ex && !ex.del && ex.status !== 'rejected') return -1;
+        const pen = Math.max(1, Math.floor((it.pts || 5) / 2));
+        put({ id, kind: 'log', type: 'task_missed', status: 'missed', ref, occ, pts: -pen, title: it.title, at: Date.now(), by: D.me.name });
+        score(); persist(); return pen;
       }
       return -1;
     },
@@ -62,6 +75,9 @@
     pickRingtone() { D.me.ringtone = 'Morning Flower'; persist(); window.onNative(); },
     pickSong() { D.me.ringtone = 'השיר שלי'; persist(); window.onNative(); },
     previewRingtone() {},
+    takePhoto(id, occ) { this.action('photo', id, occ); persist(); setTimeout(() => window.onPhotoSent(), 50); },
+    photo(id) { return D.items[id] && D.items[id].photo ? 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="#ffd166"/><text x="100" y="120" font-size="80" text-anchor="middle">📚</text></svg>') : ''; },
+    setLive(on) { D.me.live = on; persist(); },
     testAlarm() { console.log('test alarm'); },
     toast(s) { console.log('toast', s); },
     openUrl(u) { console.log('open', u); },
