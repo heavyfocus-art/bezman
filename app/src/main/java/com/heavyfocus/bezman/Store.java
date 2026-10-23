@@ -189,6 +189,10 @@ public final class Store {
 
     // ---------- setup ----------
     public static void setup(Context c, String role, String name, String code) {
+        setup(c, role, name, code, "f", "purple");
+    }
+
+    public static void setup(Context c, String role, String name, String code, String gender, String theme) {
         SharedPreferences.Editor e = p(c).edit();
         boolean newFamily = !code.equals(code(c));
         e.putString("role", role).putString("name", name).putString("code", code);
@@ -198,9 +202,109 @@ public final class Store {
                     .putLong("lastProc", System.currentTimeMillis());
         }
         e.commit();
+        JSONObject old = items(c).optJSONObject("m_" + dev(c));
         JSONObject m = U.obj("id", "m_" + dev(c), "kind", "member", "role", role, "name", name);
         U.put(m, "by", name);
+        if ("child".equals(role)) {
+            U.put(m, "kid", kidId(name));
+            U.put(m, "gender", "m".equals(gender) ? "m" : "f");
+            U.put(m, "theme", "yb".equals(theme) ? "yb" : "purple");
+            U.put(m, "since", old != null && old.has("since") ? old.optLong("since") : System.currentTimeMillis());
+        }
         upsertLocal(c, m);
+    }
+
+    /** The child changes her/his colors or gender (for the Hebrew texts). */
+    public static void setProfile(Context c, String gender, String theme) {
+        JSONObject m = items(c).optJSONObject("m_" + dev(c));
+        if (m == null) return;
+        if (gender != null && !gender.isEmpty()) U.put(m, "gender", "m".equals(gender) ? "m" : "f");
+        if (theme != null && !theme.isEmpty()) U.put(m, "theme", "yb".equals(theme) ? "yb" : "purple");
+        if (!m.has("kid")) U.put(m, "kid", kidId(m.optString("name")));
+        if (!m.has("since")) U.put(m, "since", 1);
+        upsertLocal(c, m);
+    }
+
+    // ---------- several children ----------
+    /** Stable id for a child, made from the name (same as in the screens). */
+    public static String kidId(String name) {
+        String n = name == null ? "" : name.trim().replaceAll("\\s+", " ").toLowerCase();
+        int h = 0x811c9dc5;
+        for (int i = 0; i < n.length(); i++) {
+            h ^= n.charAt(i);
+            h *= 0x01000193;
+        }
+        return "k_" + String.format("%08x", h);
+    }
+
+    static String memberKid(JSONObject m) {
+        String k = m.optString("kid", "");
+        return k.isEmpty() ? kidId(m.optString("name")) : k;
+    }
+
+    /** Data saved before there could be more than one child belongs to the first child who joined. */
+    public static String legacyKid(JSONObject all) {
+        String best = "";
+        long bestSince = Long.MAX_VALUE;
+        for (JSONObject m : list(all, "member")) {
+            if (!"child".equals(m.optString("role"))) continue;
+            long s = m.optLong("since", 0);
+            if (s < bestSince) {
+                bestSince = s;
+                best = memberKid(m);
+            }
+        }
+        return best;
+    }
+
+    public static String kidOf(JSONObject it, String legacy) {
+        String k = it == null ? "" : it.optString("kid", "");
+        return k.isEmpty() ? legacy : k;
+    }
+
+    static JSONObject kidMember(JSONObject all, String kid) {
+        JSONObject best = null;
+        for (JSONObject m : list(all, "member")) {
+            if (!"child".equals(m.optString("role")) || !memberKid(m).equals(kid)) continue;
+            if (best == null || m.optLong("upd") > best.optLong("upd")) best = m;
+        }
+        return best;
+    }
+
+    public static String kidName(JSONObject all, String kid) {
+        JSONObject m = kidMember(all, kid);
+        return m == null ? "הילד/ה" : m.optString("name", "הילד/ה");
+    }
+
+    public static boolean kidBoy(JSONObject all, String kid) {
+        JSONObject m = kidMember(all, kid);
+        return m != null && "m".equals(m.optString("gender"));
+    }
+
+    /** On a child's phone: which child am I. */
+    public static String myKid(Context c) {
+        JSONObject m = items(c).optJSONObject("m_" + dev(c));
+        return m != null ? memberKid(m) : kidId(name(c));
+    }
+
+    public static boolean meBoy(Context c) {
+        JSONObject m = items(c).optJSONObject("m_" + dev(c));
+        return m != null && "m".equals(m.optString("gender"));
+    }
+
+    public static String myTheme(Context c) {
+        JSONObject m = items(c).optJSONObject("m_" + dev(c));
+        return m == null ? "purple" : m.optString("theme", "purple");
+    }
+
+    /** Is this item for me (on a child's phone)? */
+    public static boolean mine(Context c, JSONObject all, JSONObject it) {
+        return kidOf(it, legacyKid(all)).equals(myKid(c));
+    }
+
+    /** Ask the screen for fireworks + festive sound next time it shows. */
+    public static void celebrate(Context c) {
+        setLong(c, "celebrate", System.currentTimeMillis());
     }
 
     public static void reset(Context c) {
@@ -208,21 +312,16 @@ public final class Store {
         p(c).edit().clear().putString("dev", d).commit();
     }
 
-    public static String childName(Context c) {
-        for (JSONObject m : list(items(c), "member")) {
-            if ("child".equals(m.optString("role"))) return m.optString("name", "");
-        }
-        return isChild(c) ? name(c) : "";
-    }
-
     // ---------- actions with points ----------
     static boolean has(JSONObject all, String id) {
         return U.alive(all.optJSONObject(id));
     }
 
-    static JSONObject log(String id, String type, String ref, String occ, int pts, String title) {
-        return U.obj("id", id, "kind", "log", "type", type, "ref", ref, "occ", occ,
+    static JSONObject log(Context c, String id, String type, String ref, String occ, int pts, String title) {
+        JSONObject l = U.obj("id", id, "kind", "log", "type", type, "ref", ref, "occ", occ,
                 "pts", pts, "title", title, "at", System.currentTimeMillis());
+        if (isChild(c)) U.put(l, "kid", myKid(c));
+        return l;
     }
 
     /** She dismissed the wake alarm. Returns points earned (or -1 if already recorded). */
@@ -233,13 +332,14 @@ public final class Store {
         boolean snoozed = p(c).getBoolean("snz:" + alarmId + ":" + occ, false);
         boolean missed = has(all, "wakemiss:" + alarmId + ":" + occ);
         int pts = missed ? 3 : (snoozed ? 5 : 10);
-        JSONObject l = log(id, "woke", alarmId, occ, pts, label);
+        JSONObject l = log(c, id, "woke", alarmId, occ, pts, label);
         U.put(l, "snoozed", snoozed);
         upsertLocal(c, l);
         if (pts == 10) {
+            celebrate(c);
             int streak = streak(c, items(c));
             if (streak > 0 && streak % 5 == 0) {
-                upsertLocal(c, log("bonus:" + occ, "bonus", alarmId, occ, 15, "רצף של " + streak + " ימים"));
+                upsertLocal(c, log(c, "bonus:" + myKid(c) + ":" + occ, "bonus", alarmId, occ, 15, "רצף של " + streak + " ימים"));
             }
         }
         afterLocalChange(c);
@@ -248,7 +348,7 @@ public final class Store {
 
     public static void snoozed(Context c, String alarmId, String occ, String label) {
         p(c).edit().putBoolean("snz:" + alarmId + ":" + occ, true).apply();
-        upsertLocal(c, log("snooze:" + alarmId + ":" + occ, "snooze", alarmId, occ, 0, label));
+        upsertLocal(c, log(c, "snooze:" + alarmId + ":" + occ, "snooze", alarmId, occ, 0, label));
         afterLocalChange(c);
     }
 
@@ -266,9 +366,10 @@ public final class Store {
         long now = System.currentTimeMillis();
         int late = (int) Math.max(0, (now - leave) / U.MIN);
         int pts = now <= leave + 2 * U.MIN ? 10 : (now <= leave + 10 * U.MIN ? 5 : 2);
-        JSONObject l = log(id, "left", eventId, occ, pts, ev.optString("title"));
+        JSONObject l = log(c, id, "left", eventId, occ, pts, ev.optString("title"));
         U.put(l, "late", now <= leave + 2 * U.MIN ? 0 : late);
         upsertLocal(c, l);
+        if (pts == 10) celebrate(c);
         afterLocalChange(c);
         return pts;
     }
@@ -302,11 +403,12 @@ public final class Store {
         long due = U.at(occ, m < 0 ? 23 * 60 + 59 : m);
         boolean onTime = System.currentTimeMillis() <= due;
         int claim = onTime ? base : Math.max(1, base / 2);
-        JSONObject l = log(id, "task_done", taskId, occ, 0, t.optString("title"));
+        JSONObject l = log(c, id, "task_done", taskId, occ, 0, t.optString("title"));
         U.put(l, "status", "pending");
         U.put(l, "claim", claim);
         U.put(l, "late", !onTime);
         U.put(l, "by", name(c));
+        if (onTime) celebrate(c);
         if (withPhoto) {
             U.put(l, "photo", true);
             U.put(l, "photoBy", dev(c));
@@ -323,7 +425,7 @@ public final class Store {
         String id = "task:" + taskId + ":" + occ;
         if (t == null || !taskOpen(all, taskId, occ)) return 0;
         int pen = taskPenalty(t);
-        JSONObject l = log(id, "task_missed", taskId, occ, -pen, t.optString("title"));
+        JSONObject l = log(c, id, "task_missed", taskId, occ, -pen, t.optString("title"));
         U.put(l, "status", "missed");
         U.put(l, "auto", auto);
         U.put(l, "by", name(c));
@@ -350,21 +452,23 @@ public final class Store {
     static void wakeMissed(Context c, String alarmId, String occ, String label) {
         JSONObject all = items(c);
         if (has(all, "woke:" + alarmId + ":" + occ) || has(all, "wakemiss:" + alarmId + ":" + occ)) return;
-        upsertLocal(c, log("wakemiss:" + alarmId + ":" + occ, "wake_missed", alarmId, occ, 0, label));
+        upsertLocal(c, log(c, "wakemiss:" + alarmId + ":" + occ, "wake_missed", alarmId, occ, 0, label));
         afterLocalChange(c);
     }
 
     static void leaveMissed(Context c, String eventId, String occ, String title) {
         JSONObject all = items(c);
         if (has(all, "left:" + eventId + ":" + occ) || has(all, "leavemiss:" + eventId + ":" + occ)) return;
-        upsertLocal(c, log("leavemiss:" + eventId + ":" + occ, "leave_missed", eventId, occ, 0, title));
+        upsertLocal(c, log(c, "leavemiss:" + eventId + ":" + occ, "leave_missed", eventId, occ, 0, title));
         afterLocalChange(c);
     }
 
     // ---------- score ----------
     /** Days in a row (with an alarm) that she woke up on time without snooze. */
     static int streak(Context c, JSONObject all) {
-        List<JSONObject> alarms = list(all, "alarm");
+        String me = myKid(c), legacy = legacyKid(all);
+        List<JSONObject> alarms = new ArrayList<>();
+        for (JSONObject a : list(all, "alarm")) if (kidOf(a, legacy).equals(me)) alarms.add(a);
         Calendar d = U.startOfDay(System.currentTimeMillis());
         int streak = 0;
         for (int i = 0; i < 400; i++) {
@@ -389,19 +493,22 @@ public final class Store {
     static void recomputeScore(Context c) {
         if (!isChild(c)) return;
         JSONObject all = items(c);
+        String me = myKid(c), legacy = legacyKid(all);
         int pts = 0;
         Iterator<String> it = all.keys();
         while (it.hasNext()) {
             JSONObject o = all.optJSONObject(it.next());
             if (!U.alive(o)) continue;
+            if (!kidOf(o, legacy).equals(me)) continue;
             String k = o.optString("kind");
             if ("log".equals(k)) pts += o.optInt("pts", 0);
             else if ("redeem".equals(k) && !"declined".equals(o.optString("status"))) pts -= o.optInt("cost", 0);
         }
         int streak = streak(c, all);
-        JSONObject old = all.optJSONObject("score");
+        String sid = "score:" + me;
+        JSONObject old = all.optJSONObject(sid);
         if (old != null && old.optInt("pts") == pts && old.optInt("streak") == streak) return;
-        upsertLocal(c, U.obj("id", "score", "kind", "score", "pts", pts, "streak", streak));
+        upsertLocal(c, U.obj("id", sid, "kind", "score", "kid", me, "pts", pts, "streak", streak));
     }
 
     /** After anything changed on this device: update score, alarms, send to family, refresh screen. */

@@ -31,6 +31,7 @@ public class AlarmActivity extends Activity {
     Button snooze;
     final Handler h = new Handler(Looper.getMainLooper());
     final Random rnd = new Random();
+    boolean yb = false;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -97,8 +98,9 @@ public class AlarmActivity extends Activity {
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         root.setPadding(dp(24), dp(48), dp(24), dp(24));
+        yb = "yb".equals(Store.myTheme(this));
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xFF2B2160, 0xFF6C4BF5, 0xFFFF7A59});
+                yb ? new int[]{0xFF000000, 0xFF161616, 0xFF3D3300} : new int[]{0xFF2B2160, 0xFF6C4BF5, 0xFFFF7A59});
         root.setBackground(bg);
 
         clock = text("", 64, Color.WHITE, true);
@@ -133,7 +135,7 @@ public class AlarmActivity extends Activity {
         input.setTypeface(Typeface.DEFAULT_BOLD);
         GradientDrawable ib = new GradientDrawable();
         ib.setColor(0xFFF4F1FF);
-        ib.setStroke(dp(2), 0xFF6C4BF5);
+        ib.setStroke(dp(2), yb ? 0xFF000000 : 0xFF6C4BF5);
         ib.setCornerRadius(dp(14));
         input.setBackground(ib);
         input.setPadding(dp(12), dp(10), dp(12), dp(10));
@@ -147,7 +149,7 @@ public class AlarmActivity extends Activity {
         feedback = text("", 16, 0xFFE5484D, false);
         card.addView(feedback);
 
-        Button ok = button("קמתי! ✅", 0xFF3DDC97, 0xFF0D3B2A);
+        Button ok = yb ? button("קמתי! ✅", 0xFFFFD200, 0xFF000000) : button("קמתי! ✅", 0xFF3DDC97, 0xFF0D3B2A);
         ok.setOnClickListener(v -> check());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -165,7 +167,7 @@ public class AlarmActivity extends Activity {
         root.addView(snooze, sp);
         updateSnooze();
 
-        TextView hint = text("קמה בלי נודניק = 10 ⭐   ·   עם נודניק = 5 ⭐", 14, 0xFFFFE6DC, false);
+        TextView hint = text("בלי נודניק = 10 ⭐   ·   עם נודניק = 5 ⭐", 14, yb ? 0xFFFFE680 : 0xFFFFE6DC, false);
         LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
         hp.topMargin = dp(16);

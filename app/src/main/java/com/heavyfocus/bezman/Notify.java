@@ -164,13 +164,21 @@ public final class Notify {
         long now = System.currentTimeMillis();
         String me = Store.dev(c);
         boolean child = Store.isChild(c);
-        String kid = Store.childName(c);
-        if (kid.isEmpty()) kid = "הילדה";
+        JSONObject all = Store.items(c);
+        String legacy = Store.legacyKid(all);
+        String myKid = child ? Store.myKid(c) : "";
+        boolean meBoy = child && Store.meBoy(c);
         for (JSONObject[] ch : changes) {
             JSONObject old = ch[0], n = ch[1];
             if (!U.alive(n) || me.equals(n.optString("dev"))) continue;
             if (n.optLong("upd") < now - 12 * U.HOUR) continue;
             String kind = n.optString("kind");
+            if ("member".equals(kind) || "score".equals(kind)) continue;
+            String kidId = Store.kidOf(n, legacy);
+            if (child && !kidId.equals(myKid)) continue; // about another child
+            String kid = Store.kidName(all, kidId);
+            final boolean boy = Store.kidBoy(all, kidId);
+            java.util.function.BiFunction<String, String, String> g = (f, m) -> boy ? m : f;
             String id = n.optString("id");
             String title = n.optString("title");
             String type0 = n.optString("type");
@@ -183,17 +191,18 @@ public final class Notify {
                 int pts = n.optInt("pts");
                 if (!child) {
                     if ("task_done".equals(type0) && "pending".equals(st)) {
-                        approval(c, id, id + ":p:" + n.optLong("upd"), "📝 " + kid + " סימנה בוצע: " + title,
+                        approval(c, id, id + ":p:" + n.optLong("upd"), "📝 " + kid + g.apply(" סימנה", " סימן") + " בוצע: " + title,
                                 (n.optBoolean("photo") ? "📷 עם תמונה · " : "") + "מחכה לאישור שלך ("
                                         + n.optInt("claim") + " ⭐)");
                     } else if ("task_missed".equals(type0)) {
-                        family(c, id + ":m", "❌ " + kid + (n.optBoolean("auto") ? " לא סימנה עד סוף היום: " : " סימנה לא בוצע: ") + title,
-                                "‎" + pts + " ⭐");
+                        family(c, id + ":m", "❌ " + kid + (n.optBoolean("auto") ? g.apply(" לא סימנה", " לא סימן") + " עד סוף היום: "
+                                : g.apply(" סימנה", " סימן") + " לא בוצע: ") + title, "\u200E" + pts + " ⭐");
                     }
                 } else if ("task_done".equals(type0) && old != null) {
                     String who = n.optString("approvedBy", "ההורים");
                     if ("approved".equals(st)) {
-                        family(c, id + ":ok:" + n.optLong("upd"), "✅ " + who + " אישר/ה: " + title, "קיבלת ‎+" + pts + " ⭐");
+                        Store.celebrate(c);
+                        family(c, id + ":ok:" + n.optLong("upd"), "✅ " + who + " אישר/ה: " + title, "קיבלת \u200E+" + pts + " ⭐ 🎉");
                     } else if ("rejected".equals(st)) {
                         family(c, id + ":no:" + n.optLong("upd"), "↩️ המשימה לא אושרה: " + title, "אפשר לבצע ולסמן שוב");
                     }
@@ -201,34 +210,32 @@ public final class Notify {
                 continue;
             }
             if (!child) {
+                JSONObject author = all.optJSONObject("m_" + n.optString("dev"));
+                boolean byChild = author != null && "child".equals(author.optString("role"));
                 if ("log".equals(kind) && old == null) {
                     String type = n.optString("type");
                     String at = U.hhmm(n.optLong("at", now));
                     int pts = n.optInt("pts");
                     switch (type) {
                         case "woke":
-                            family(c, id, "☀️ " + kid + " קמה (" + at + ")",
+                            family(c, id, "☀️ " + kid + g.apply(" קמה", " קם") + " (" + at + ")",
                                     (n.optBoolean("snoozed") ? "אחרי נודניק" : "בזמן, בלי נודניק") + " · \u200E+" + pts + " ⭐");
                             break;
                         case "wake_missed":
-                            family(c, id, "⚠️ " + kid + " לא כיבתה את השעון המעורר",
-                                    "השעון מצלצל כבר 10 דקות. אולי כדאי להעיר אותה");
+                            family(c, id, "⚠️ " + kid + g.apply(" לא כיבתה", " לא כיבה") + " את השעון המעורר",
+                                    "השעון מצלצל כבר 10 דקות. אולי כדאי " + g.apply("להעיר אותה", "להעיר אותו"));
                             break;
                         case "left":
                             int late = n.optInt("late");
-                            family(c, id, "🚪 " + kid + " יצאה ל" + title + " (" + at + ")",
+                            family(c, id, "🚪 " + kid + g.apply(" יצאה ל", " יצא ל") + title + " (" + at + ")",
                                     late > 0 ? "באיחור של " + late + " דק׳ · \u200E+" + pts + " ⭐" : "בזמן! · \u200E+" + pts + " ⭐");
                             break;
                         case "leave_missed":
-                            family(c, id, "⚠️ " + kid + " לא סימנה יציאה ל" + title,
+                            family(c, id, "⚠️ " + kid + g.apply(" לא סימנה", " לא סימן") + " יציאה ל" + title,
                                     "עברו 10 דקות משעת היציאה");
                             break;
-                        case "task_done":
-                            family(c, id, "✅ " + kid + " סיימה: " + title,
-                                    (n.optBoolean("late") ? "באיחור" : "בזמן") + " · \u200E+" + pts + " ⭐");
-                            break;
                         case "bonus":
-                            family(c, id, "🔥 " + kid + " השיגה " + title + "!", "בונוס \u200E+" + pts + " ⭐ · שווה מילה טובה");
+                            family(c, id, "🔥 " + kid + g.apply(" השיגה ", " השיג ") + title + "!", "בונוס \u200E+" + pts + " ⭐ · שווה מילה טובה");
                             break;
                         default:
                             break;
@@ -236,6 +243,11 @@ public final class Notify {
                 } else if ("redeem".equals(kind) && "pending".equals(n.optString("status"))) {
                     family(c, id + ":pending", "🎁 " + kid + " רוצה לממש פרס",
                             title + " · " + n.optInt("cost") + " ⭐ – נכנסים לאפליקציה כדי לאשר");
+                } else if (byChild && old == null && ("task".equals(kind) || "event".equals(kind) || "alarm".equals(kind))) {
+                    String what = "task".equals(kind) ? "משימה" : "event".equals(kind) ? "חוג/יציאה" : "שעון מעורר";
+                    String t = "alarm".equals(kind) ? n.optString("time") : title;
+                    family(c, id + ":new", "📌 " + kid + g.apply(" הוסיפה ", " הוסיף ") + what + ": " + t,
+                            "task".equals(kind) ? "אפשר לשנות לה/לו את הנקודות בלשונית לו״ז" : "נכנס ללו״ז");
                 }
             } else {
                 if (("task".equals(kind) || "event".equals(kind)) && old == null) {
@@ -243,12 +255,14 @@ public final class Notify {
                 } else if ("reward".equals(kind) && old == null) {
                     family(c, id + ":new", "🎁 פרס חדש: " + title, "שווה " + n.optInt("cost") + " ⭐");
                 } else if ("redeem".equals(kind) && old != null && !n.optString("status").equals(old.optString("status"))) {
-                    if ("approved".equals(n.optString("status")))
-                        family(c, id + ":ok", "🎉 אושר! " + title, "תהני!");
-                    else if ("declined".equals(n.optString("status")))
-                        family(c, id + ":no", "הבקשה ל" + title + " לא אושרה", "הנקודות חזרו אלייך");
+                    if ("approved".equals(n.optString("status"))) {
+                        Store.celebrate(c);
+                        family(c, id + ":ok", "🎉 אושר! " + title, meBoy ? "תהנה!" : "תהני!");
+                    } else if ("declined".equals(n.optString("status")))
+                        family(c, id + ":no", "הבקשה ל" + title + " לא אושרה", meBoy ? "הנקודות חזרו אליך" : "הנקודות חזרו אלייך");
                 } else if ("log".equals(kind) && "gift".equals(n.optString("type")) && old == null) {
                     int pts = n.optInt("pts");
+                    if (pts > 0) Store.celebrate(c);
                     family(c, id, "💜 " + n.optString("by") + ": " + title,
                             pts > 0 ? "קיבלת \u200E+" + pts + " ⭐ בונוס" : "הודעה מההורים");
                 }

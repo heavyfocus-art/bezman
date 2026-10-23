@@ -45,13 +45,20 @@ public final class Sched {
         }
     }
 
+    static List<JSONObject> mineOnly(Context c, JSONObject all, String kind) {
+        String me = Store.myKid(c), legacy = Store.legacyKid(all);
+        List<JSONObject> out = new ArrayList<>();
+        for (JSONObject o : Store.list(all, kind)) if (Store.kidOf(o, legacy).equals(me)) out.add(o);
+        return out;
+    }
+
     /** All triggers with from < time <= to, sorted. */
     public static List<T> compute(Context c, long from, long to) {
         List<T> out = new ArrayList<>();
         JSONObject all = Store.items(c);
-        List<JSONObject> alarms = Store.list(all, "alarm");
-        List<JSONObject> events = Store.list(all, "event");
-        List<JSONObject> tasks = Store.list(all, "task");
+        List<JSONObject> alarms = mineOnly(c, all, "alarm");
+        List<JSONObject> events = mineOnly(c, all, "event");
+        List<JSONObject> tasks = mineOnly(c, all, "task");
 
         Calendar d = U.startOfDay(from);
         d.add(Calendar.DAY_OF_MONTH, -1);

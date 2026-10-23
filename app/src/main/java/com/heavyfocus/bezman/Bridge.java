@@ -34,8 +34,16 @@ public class Bridge {
                 "code", Store.code(c), "lastSync", Store.getLong(c, "lastSync"),
                 "ringtone", Store.getStr(c, "ringtoneName"),
                 "live", Store.p(c).getBoolean("live", true));
+        if (Store.isChild(c)) {
+            U.put(me, "kid", Store.myKid(c));
+            U.put(me, "theme", Store.myTheme(c));
+            U.put(me, "gender", Store.meBoy(c) ? "m" : "f");
+        }
+        long cel = Store.getLong(c, "celebrate");
+        boolean celebrate = cel > 0 && System.currentTimeMillis() - cel < 12 * U.HOUR;
+        if (cel > 0) Store.setLong(c, "celebrate", 0);
         return U.obj("items", Store.items(c), "me", me, "version", BuildConfig.VERSION_NAME,
-                "apk", APK_URL, "now", System.currentTimeMillis()).toString();
+                "apk", APK_URL, "now", System.currentTimeMillis(), "celebrate", celebrate).toString();
     }
 
     @JavascriptInterface
@@ -62,6 +70,22 @@ public class Bridge {
         StringBuilder sb = new StringBuilder();
         for (char ch : code.toUpperCase().toCharArray()) if (Character.isLetterOrDigit(ch)) sb.append(ch);
         return sb.toString();
+    }
+
+    @JavascriptInterface
+    public String setup2(String role, String name, String code, String gender, String theme) {
+        Store.setup(c, role, name.trim(), normCode(code), gender, theme);
+        Store.afterLocalChange(c);
+        Sync.syncAsync(c);
+        LiveService.start(c);
+        return state();
+    }
+
+    @JavascriptInterface
+    public String setProfile(String gender, String theme) {
+        Store.setProfile(c, gender, theme);
+        Store.afterLocalChange(c);
+        return state();
     }
 
     @JavascriptInterface

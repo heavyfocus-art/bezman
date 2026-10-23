@@ -31,12 +31,49 @@ function occursOn(it, d) {
   if (it.date) return it.date === occOf(d);
   return Array.isArray(it.days) && it.days.indexOf(d.getDay()) >= 0;
 }
-function kidName() {
-  const m = list('member').find(x => x.role === 'child');
-  return m ? m.name : (isChild() ? S.me.name : 'הילדה');
+// ---------- several children ----------
+let KID = null;
+function kidId(name) {
+  const n = String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  let h = 0x811c9dc5;
+  for (let i = 0; i < n.length; i++) { h ^= n.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return 'k_' + (h >>> 0).toString(16).padStart(8, '0');
 }
+const memberKid = m => m.kid || kidId(m.name);
+function kids() {
+  const by = {};
+  list('member').filter(m => m.role === 'child').forEach(m => {
+    const k = memberKid(m);
+    const cur = by[k];
+    const since = m.since || 0;
+    if (!cur) by[k] = { kid: k, name: m.name, gender: m.gender || 'f', theme: m.theme || 'purple', since, upd: m.upd || 0 };
+    else {
+      cur.since = Math.min(cur.since, since);
+      if ((m.upd || 0) > cur.upd) Object.assign(cur, { name: m.name, gender: m.gender || 'f', theme: m.theme || 'purple', upd: m.upd || 0 });
+    }
+  });
+  return Object.values(by).sort((a, b) => a.since - b.since);
+}
+const legacyKid = () => { const k = kids(); return k.length ? k[0].kid : null; };
+const kidOf = it => (it && it.kid) || legacyKid();
+const mine = kind => list(kind).filter(i => kidOf(i) === KID);
+function pickKid() {
+  if (isChild()) { KID = S.me.kid || kidId(S.me.name); return; }
+  const ks = kids();
+  if (!KID) { try { KID = localStorage.getItem('bz-kid'); } catch (e) {} }
+  if (!ks.some(k => k.kid === KID)) KID = ks.length ? ks[0].kid : null;
+}
+function kidInfo() {
+  const k = kids().find(x => x.kid === KID);
+  if (k) return k;
+  if (isChild()) return { kid: KID, name: S.me.name, gender: S.me.gender || 'f', theme: S.me.theme || 'purple' };
+  return { kid: null, name: 'הילד/ה', gender: 'f', theme: 'purple' };
+}
+const kidName = () => kidInfo().name;
+/** Hebrew text by the child's gender: G('קמה', 'קם') */
+const G = (f, m) => kidInfo().gender === 'm' ? m : f;
 function score() {
-  const s = item('score');
+  const s = item('score:' + KID) || (KID && KID === legacyKid() ? item('score') : null);
   return { pts: s ? s.pts || 0 : 0, streak: s ? s.streak || 0 : 0 };
 }
 function dur(ms) {
@@ -63,17 +100,24 @@ function daysText(it) {
 function load() {
   try { S = JSON.parse(B.state()); } catch (e) { S = { items: {}, me: {} }; }
   render();
+  if (S.celebrate) celebrate();
 }
-window.onPhotoSent = () => { load(); confetti(); toast('התמונה נשלחה להורים לאישור 📷'); };
-window.onNative = () => { if (!MODAL) load(); else { try { S = JSON.parse(B.state()); } catch (e) {} } };
+window.onPhotoSent = () => { load(); toast('התמונה נשלחה להורים לאישור 📷'); };
+window.onNative = () => {
+  if (!MODAL) load();
+  else { try { S = JSON.parse(B.state()); if (S.celebrate) celebrate(); } catch (e) {} }
+};
 window.onBack = () => {
   if (MODAL) { closeModal(); return true; }
   if (S && S.me.role && TAB !== 'today') { TAB = 'today'; render(); return true; }
   return false;
 };
 
+const PER_KID = ['alarm', 'event', 'task', 'reward', 'redeem', 'log'];
 function save(items) {
-  S = JSON.parse(B.upsert(JSON.stringify(Array.isArray(items) ? items : [items])));
+  items = Array.isArray(items) ? items : [items];
+  items.forEach(it => { if (PER_KID.indexOf(it.kind) >= 0 && !it.kid && KID) it.kid = KID; });
+  S = JSON.parse(B.upsert(JSON.stringify(items)));
   render();
 }
 
@@ -98,21 +142,99 @@ function confetti() {
   }
 }
 
+// ---------- celebration: fireworks + festive sound ----------
+let AC = null;
+function fanfare() {
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === 'suspended') AC.resume();
+    const t0 = AC.currentTime + 0.05;
+    const master = AC.createGain();
+    master.gain.value = 0.5;
+    master.connect(AC.destination);
+    const note = (freq, start, len, type, vol) => {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = type; o.frequency.value = freq;
+      g.gain.setValueAtTime(0, t0 + start);
+      g.gain.linearRampToValueAtTime(vol, t0 + start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + start + len);
+      o.connect(g); g.connect(master);
+      o.start(t0 + start); o.stop(t0 + start + len + 0.05);
+    };
+    // ta-ta-ta-taaa!  (C E G C' then a big chord)
+    [[523.25, 0], [659.25, 0.13], [783.99, 0.26]].forEach(([f, st]) => { note(f, st, 0.16, 'square', 0.18); note(f, st, 0.18, 'triangle', 0.3); });
+    [1046.5, 783.99, 659.25, 523.25].forEach(f => { note(f, 0.42, 1.1, 'triangle', 0.22); note(f, 0.42, 0.9, 'square', 0.06); });
+    // firework pops
+    [0.7, 0.95, 1.2, 1.5].forEach(st => {
+      const len = 0.25, buf = AC.createBuffer(1, Math.floor(AC.sampleRate * len), AC.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
+      const src = AC.createBufferSource(), g = AC.createGain();
+      src.buffer = buf; g.gain.value = 0.35;
+      src.connect(g); g.connect(master); src.start(t0 + st);
+    });
+  } catch (e) {}
+}
+function fireworks() {
+  const fx = $('#fx');
+  const cv = document.createElement('canvas');
+  const W = cv.width = window.innerWidth * 2, H = cv.height = window.innerHeight * 2;
+  fx.appendChild(cv);
+  const ctx = cv.getContext('2d');
+  const yb = document.body.dataset.theme === 'yb';
+  const colors = yb ? ['#ffd200', '#ffffff', '#ffe866', '#fff4b8', '#ffb800'] : ['#ffd166', '#ff7a59', '#9c84ff', '#3ddc97', '#ff6fb5', '#ffffff'];
+  const parts = [];
+  const burst = (x, y) => {
+    const col = colors[Math.floor(Math.random() * colors.length)];
+    const n = 70;
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 * i) / n + Math.random() * 0.1, sp = 5 + Math.random() * 9;
+      parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, col: Math.random() < 0.25 ? '#fff' : col, r: 3 + Math.random() * 3 });
+    }
+  };
+  const shots = [0, 280, 520, 800, 1050].map(d => ({ d, x: W * (0.2 + Math.random() * 0.6), y: H * (0.15 + Math.random() * 0.35), done: false }));
+  const start = performance.now();
+  const step = now => {
+    const t = now - start;
+    shots.forEach(s => { if (!s.done && t >= s.d) { s.done = true; burst(s.x, s.y); } });
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of parts) {
+      if (p.life <= 0) continue;
+      p.x += p.vx; p.y += p.vy; p.vy += 0.18; p.vx *= 0.985; p.vy *= 0.985; p.life -= 0.012;
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.col;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    if (t < 3200) requestAnimationFrame(step); else cv.remove();
+  };
+  requestAnimationFrame(step);
+}
+let lastCelebrate = 0;
+function celebrate() {
+  if (Date.now() - lastCelebrate < 1500) return;
+  lastCelebrate = Date.now();
+  fireworks(); fanfare(); confetti();
+}
+
 // ---------- agenda for a day ----------
 function agenda(d) {
   const occ = occOf(d);
   const rows = [];
-  list('alarm').filter(a => a.on !== false && occursOn(a, d) && mins(a.time) >= 0).forEach(a => {
+  mine('alarm').filter(a => a.on !== false && occursOn(a, d) && mins(a.time) >= 0).forEach(a => {
     rows.push({ type: 'alarm', t: at(occ, mins(a.time)), it: a, occ,
       log: item(`woke:${a.id}:${occ}`), miss: item(`wakemiss:${a.id}:${occ}`), snooze: item(`snooze:${a.id}:${occ}`) });
   });
-  list('event').filter(e => occursOn(e, d) && mins(e.start) >= 0).forEach(e => {
+  mine('event').filter(e => occursOn(e, d) && mins(e.start) >= 0).forEach(e => {
     const start = at(occ, mins(e.start));
     const leave = start - (e.travel || 0) * 60000;
     rows.push({ type: 'event', t: leave, start, leave, prepAt: leave - (e.prep || 0) * 60000, it: e, occ,
       log: item(`left:${e.id}:${occ}`), miss: item(`leavemiss:${e.id}:${occ}`) });
   });
-  list('task').filter(k => occursOn(k, d)).forEach(k => {
+  mine('task').filter(k => occursOn(k, d)).forEach(k => {
     const m = mins(k.time);
     rows.push({ type: 'task', t: at(occ, m >= 0 ? m : 1439), it: k, occ, log: item(`task:${k.id}:${occ}`) });
   });
@@ -123,7 +245,7 @@ function rowHtml(r, child, now) {
   const it = r.it;
   if (r.type === 'alarm') {
     let st;
-    if (r.log) st = `<span class="pill ok">${child ? 'קמת' : 'קמה'} ב-${tHM(r.log.at)} · \u200E+${r.log.pts}⭐</span>`;
+    if (r.log) st = `<span class="pill ok">${child ? 'קמת' : G('קמה', 'קם')} ב-${tHM(r.log.at)} · \u200E+${r.log.pts}⭐</span>`;
     else if (r.miss) st = `<span class="pill warn">⚠️ השעון לא כובה בזמן</span>`;
     else if (now < r.t) st = `<span class="pill wait">מתוכנן</span>`;
     else st = `<span class="pill sun">מצלצל…</span>`;
@@ -134,8 +256,8 @@ function rowHtml(r, child, now) {
   }
   if (r.type === 'event') {
     let st = '', btn = '';
-    if (r.log) st = `<span class="pill ok">${child ? 'יצאת' : 'יצאה'} ב-${tHM(r.log.at)}${r.log.late ? ' (איחור ' + r.log.late + ' דק׳)' : ''} · \u200E+${r.log.pts}⭐</span>`;
-    else if (r.miss) st = `<span class="pill warn">לא ${child ? 'סימנת' : 'סימנה'} יציאה</span>`;
+    if (r.log) st = `<span class="pill ok">${child ? 'יצאת' : G('יצאה', 'יצא')} ב-${tHM(r.log.at)}${r.log.late ? ' (איחור ' + r.log.late + ' דק׳)' : ''} · \u200E+${r.log.pts}⭐</span>`;
+    else if (r.miss) st = `<span class="pill warn">לא ${child ? 'סימנת' : G('סימנה', 'סימן')} יציאה</span>`;
     else st = `יוצאים ב-<b>${tHM(r.leave)}</b> · מתחיל ב-${esc(it.start)}`;
     if (child && !r.log && r.occ === occOf(new Date()) && now >= r.leave - 60 * 60000 && now < r.start + 90 * 60000) {
       btn = `<button class="btn mint small" data-act="left" data-ref="${esc(it.id)}" data-occ="${r.occ}">יצאתי ✅</button>`;
@@ -184,8 +306,8 @@ function taskState(log) {
   return 'approved';
 }
 const penalty = t => Math.max(1, Math.floor((t.pts || 5) / 2));
-function pendingTasks() {
-  return list('log').filter(l => l.type === 'task_done' && l.status === 'pending').sort((a, b) => (a.at || 0) - (b.at || 0));
+function pendingTasks(all) {
+  return (all ? list('log') : mine('log')).filter(l => l.type === 'task_done' && l.status === 'pending').sort((a, b) => (a.at || 0) - (b.at || 0));
 }
 
 function approvalsCard() {
@@ -196,7 +318,7 @@ function approvalsCard() {
     return `<div class="card" style="border:2px solid var(--violet-soft)">
       <div style="display:flex;gap:12px;align-items:flex-start">
         <div style="flex:1"><b>${esc(l.title)}</b>
-          <div class="small muted">${esc(kidName())} סימנה בוצע ${d} ב-${tHM(l.at)}${l.late ? ' (אחרי הזמן)' : ''} · ${l.claim || 0}⭐</div></div>
+          <div class="small muted">${esc(kidName())} ${G('סימנה', 'סימן')} בוצע ${d} ב-${tHM(l.at)}${l.late ? ' (אחרי הזמן)' : ''} · ${l.claim || 0}⭐</div></div>
         ${l.photo ? `<div class="thumbwrap" data-photo="${esc(l.id)}"></div>` : ''}
       </div>
       <div class="actions" style="margin-top:12px">
@@ -241,7 +363,12 @@ function render() {
   if (!S) return;
   clearInterval(tickTimer);
   const app = $('#app');
-  if (!S.me.role || !S.me.code) { app.innerHTML = onboarding(); bindOnboarding(); return; }
+  if (!S.me.role || !S.me.code) {
+    document.body.dataset.theme = OB.theme || 'purple';
+    app.innerHTML = onboarding(); bindOnboarding(); return;
+  }
+  pickKid();
+  document.body.dataset.theme = kidInfo().theme === 'yb' ? 'yb' : 'purple';
   let body = '';
   if (TAB === 'today') body = isChild() ? childToday() : parentToday();
   else if (TAB === 'plan') body = planScreen();
@@ -250,7 +377,7 @@ function render() {
   const pending = list('redeem').filter(r => r.status === 'pending').length;
   app.innerHTML = body + `
   <nav>
-    ${navBtn('today', '🏠', 'היום', !isChild() ? pendingTasks().length : 0)}
+    ${navBtn('today', '🏠', 'היום', !isChild() ? pendingTasks(true).length : 0)}
     ${navBtn('plan', '🗓️', 'לו״ז')}
     ${navBtn('rewards', '🎁', 'פרסים', !isChild() && pending ? pending : 0)}
     ${navBtn('settings', '⚙️', 'הגדרות')}
@@ -263,10 +390,21 @@ function navBtn(id, ico, txt, badge) {
   return `<button class="${TAB === id ? 'on' : ''}" data-tab="${id}"><span class="ni">${ico}</span><span>${txt}${badge ? ` <span class="badge">${badge}</span>` : ''}</span></button>`;
 }
 
+function kidTabs() {
+  if (isChild()) return '';
+  const ks = kids();
+  if (ks.length < 2) return '';
+  return `<div class="kidtabs">${ks.map(k => {
+    const n = list('log').filter(l => kidOf(l) === k.kid && l.type === 'task_done' && l.status === 'pending').length
+      + list('redeem').filter(r => kidOf(r) === k.kid && r.status === 'pending').length;
+    return `<button class="${k.kid === KID ? 'on' : ''}" data-kid="${esc(k.kid)}"><span class="dot" style="background:${k.theme === 'yb' ? '#ffd200' : '#9c84ff'}"></span>${esc(k.name)}${n ? `<span class="badge">${n}</span>` : ''}</button>`;
+  }).join('')}</div>`;
+}
+
 function hero(title, sub) {
   const sc = score();
   const today = occOf(new Date());
-  const todayPts = list('log').filter(l => l.occ === today).reduce((s, l) => s + (l.pts || 0), 0);
+  const todayPts = mine('log').filter(l => l.occ === today).reduce((s, l) => s + (l.pts || 0), 0);
   const ls = S.me.lastSync ? Math.round((Date.now() - S.me.lastSync) / 60000) : null;
   return `<div class="hero">
     <div class="top"><div><h1>${title}</h1><div class="date">${sub}</div></div>
@@ -275,7 +413,7 @@ function hero(title, sub) {
       <div class="chip"><b>\u200E${sc.pts}</b><span>⭐ נקודות</span></div>
       <div class="chip"><b>${sc.streak}</b><span>🔥 ימים ברצף</span></div>
       <div class="chip"><b>\u200E${todayPts >= 0 ? '+' : ''}${todayPts}</b><span>✨ היום</span></div>
-    </div></div>`;
+    </div>${kidTabs()}</div>`;
 }
 function dateLine() {
   return new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -306,7 +444,7 @@ function childToday() {
       ${nx.r.type === 'event' && now >= nx.r.leave - 60 * 60000 ? `<div style="margin-top:12px"><button class="btn mint block" data-act="left" data-ref="${esc(nx.r.it.id)}" data-occ="${nx.r.occ}">יצאתי ✅ (\u200E+10⭐ אם בזמן)</button></div>` : ''}
     </div>`;
   }
-  const noAlarm = !list('alarm').length;
+  const noAlarm = !mine('alarm').length;
   return hero(`${greet}, ${esc(S.me.name)} 👋`, dateLine()) + `<main>
     ${permBanner()}
     ${next}
@@ -327,7 +465,7 @@ function tomorrowCard(child) {
 function weekCard() {
   const days = [];
   for (let i = 6; i >= 0; i--) days.push(dayAdd(new Date(), -i));
-  const logs = list('log');
+  const logs = mine('log');
   const vals = days.map(d => logs.filter(l => l.occ === occOf(d)).reduce((s, l) => s + (l.pts || 0), 0));
   const max = Math.max(10, ...vals);
   return `<div class="sec-title"><h2>7 ימים אחרונים</h2></div><div class="card"><div class="week">
@@ -338,13 +476,13 @@ function weekCard() {
 function parentToday() {
   const now = Date.now();
   const kid = kidName();
-  const joined = list('member').some(m => m.role === 'child');
+  const joined = kids().length > 0;
   const rows = agenda(new Date());
-  const pending = list('redeem').filter(r => r.status === 'pending');
-  const gifts = `<button class="btn ghost block" data-new="gift">💜 לתת בונוס / מילה טובה ל${esc(kid)}</button>`;
+  const pending = mine('redeem').filter(r => r.status === 'pending');
+  const gifts = `<button class="btn ghost block" data-new="gift">${kidInfo().theme === 'yb' ? '💛' : '💜'} לתת בונוס / מילה טובה ל${esc(kid)}</button>`;
   return hero(`${esc(kid)} היום`, dateLine()) + `<main>
     ${permBanner()}
-    ${!joined ? `<div class="card"><b>📲 ${esc(kid)} עוד לא מחוברת</b><p class="muted small">מתקינים את האפליקציה בטלפון שלה, בוחרים "אני הילדה" ומקלידים את קוד המשפחה.</p><button class="btn block" data-share="1">שליחת הקוד בוואטסאפ</button></div>` : ''}
+    ${!joined ? `<div class="card"><b>📲 אף ילד עוד לא מחובר</b><p class="muted small">מתקינים את האפליקציה בטלפון של הילד/ה, בוחרים "אני ילד/ה" ומקלידים את קוד המשפחה.</p><button class="btn block" data-share="1">שליחת הקוד בוואטסאפ</button></div>` : ''}
     ${approvalsCard()}
     ${pending.map(redeemCard).join('')}
     <div class="sec-title"><h2>מה קרה היום</h2><button class="add" data-new="task">+ משימה</button></div>
@@ -352,7 +490,7 @@ function parentToday() {
     ${gifts}
     ${weekCard()}
     ${tomorrowCard(false)}
-    <p class="muted small center">${S.me.live ? '⚡ עדכונים מיידיים פועלים' : 'העדכונים מהטלפון שלה מגיעים בדרך כלל תוך כרבע שעה'}</p>
+    <p class="muted small center">${S.me.live ? '⚡ עדכונים מיידיים פועלים' : 'העדכונים מהטלפון ' + G('שלה', 'שלו') + ' מגיעים בדרך כלל תוך כרבע שעה'}</p>
   </main>`;
 }
 
@@ -368,11 +506,11 @@ function redeemCard(r) {
 
 // ---------- plan (schedule) ----------
 function planScreen() {
-  const alarms = list('alarm').sort((a, b) => mins(a.time) - mins(b.time));
-  const events = list('event').sort((a, b) => (a.date || '') .localeCompare(b.date || '') || mins(a.start) - mins(b.start));
-  const tasks = list('task').filter(t => !t.date || t.date >= occOf(new Date())).sort((a, b) => (a.date || '').localeCompare(b.date || '') || mins(a.time) - mins(b.time));
+  const alarms = mine('alarm').sort((a, b) => mins(a.time) - mins(b.time));
+  const events = mine('event').sort((a, b) => (a.date || '') .localeCompare(b.date || '') || mins(a.start) - mins(b.start));
+  const tasks = mine('task').filter(t => !t.date || t.date >= occOf(new Date())).sort((a, b) => (a.date || '').localeCompare(b.date || '') || mins(a.time) - mins(b.time));
   const title = isChild() ? 'הלו״ז שלי' : 'הלו״ז של ' + esc(kidName());
-  return `<div class="hero" style="padding-bottom:18px"><div class="top"><div><h1>${title}</h1><div class="date">שעונים, חוגים ומשימות</div></div></div></div><main>
+  return `<div class="hero" style="padding-bottom:18px"><div class="top"><div><h1>${title}</h1><div class="date">שעונים, חוגים ומשימות</div></div></div>${kidTabs()}</div><main>
     <div class="sec-title"><h2>⏰ שעון מעורר</h2><button class="add" data-new="alarm">+ הוספה</button></div>
     ${alarms.length ? alarms.map(a => `<div class="card item ${a.on === false ? 'off' : ''}" data-edit="${esc(a.id)}">
         <div style="flex:1"><div class="big">${esc(a.time)}</div>${a.label ? `<div class="small muted">${esc(a.label)}</div>` : ''}${daysRow(a)}</div>
@@ -402,13 +540,13 @@ function daysRow(it) {
 // ---------- rewards ----------
 function rewardsScreen() {
   const sc = score();
-  const rewards = list('reward').sort((a, b) => (a.cost || 0) - (b.cost || 0));
-  const reqs = list('redeem').sort((a, b) => (b.at || b.upd) - (a.at || a.upd));
+  const rewards = mine('reward').sort((a, b) => (a.cost || 0) - (b.cost || 0));
+  const reqs = mine('redeem').sort((a, b) => (b.at || b.upd) - (a.at || a.upd));
   const child = isChild();
   const pending = reqs.filter(r => r.status === 'pending');
   const stTxt = { pending: ['wait', 'מחכה לאישור'], approved: ['ok', 'אושר 🎉'], declined: ['warn', 'לא אושר'] };
   return `<div class="hero" style="padding-bottom:18px"><div class="top"><div><h1>פרסים 🎁</h1><div class="date">${child ? 'אוספים נקודות ומממשים' : 'קובעים פרסים ומאשרים בקשות'}</div></div></div>
-    <div class="big-score"><b>\u200E${sc.pts}</b> ⭐</div></div><main>
+    <div class="big-score"><b>\u200E${sc.pts}</b> ⭐</div>${kidTabs()}</div><main>
     ${!child ? pending.map(redeemCard).join('') : ''}
     <div class="sec-title"><h2>הפרסים</h2>${!child ? `<button class="add" data-new="reward">+ פרס חדש</button>` : ''}</div>
     ${rewards.length ? `<div class="rewards">${rewards.map(r => {
@@ -419,15 +557,15 @@ function rewardsScreen() {
         <div class="bar"><div style="width:${pct}%"></div></div>
         ${child ? (can ? `<button class="btn small mint" data-want="${esc(r.id)}">לממש!</button>` : `<div class="small muted">חסרות ${r.cost - sc.pts} ⭐</div>`) : `<div class="small muted">לעריכה – לוחצים</div>`}
       </div>`;
-    }).join('')}</div>` : `<div class="card empty"><div class="e">🎁</div>${child ? 'ההורים עוד לא הוסיפו פרסים. אפשר לבקש מהם!' : 'מוסיפים פרסים שהיא תרצה – כדאי לבחור אותם יחד איתה'}</div>`}
+    }).join('')}</div>` : `<div class="card empty"><div class="e">🎁</div>${child ? 'ההורים עוד לא הוסיפו פרסים. אפשר לבקש מהם!' : G('מוסיפים פרסים שהיא תרצה – כדאי לבחור אותם יחד איתה', 'מוסיפים פרסים שהוא ירצה – כדאי לבחור אותם יחד איתו')}</div>`}
     ${!child ? `<div style="margin-top:14px">${'<button class="btn ghost block" data-new="gift">💜 לתת בונוס / מילה טובה</button>'}</div>` : ''}
     <div class="sec-title"><h2>היסטוריה</h2></div>
     <div class="card">${reqs.length ? reqs.map(r => `<div class="row"><div class="ico task">🎁</div><div class="body"><div class="t1">${esc(r.title)}</div><div class="t2">${r.cost} ⭐ · ${new Date(r.at || r.upd).toLocaleDateString('he-IL')}</div></div><span class="pill ${stTxt[r.status] ? stTxt[r.status][0] : 'wait'}">${stTxt[r.status] ? stTxt[r.status][1] : ''}</span></div>`).join('')
       : `<div class="empty">עוד לא מומשו פרסים</div>`}</div>
     <div class="card small muted">
       <b style="color:var(--ink)">איך מרוויחים נקודות?</b><br>
-      ☀️ קמה בלי נודניק: 10 · עם נודניק: 5<br>
-      🚪 יוצאת בזמן: 10 · עד 10 דק׳ איחור: 5<br>
+      ☀️ השכמה בלי נודניק: 10 · עם נודניק: 5<br>
+      🚪 יציאה בזמן: 10 · עד 10 דק׳ איחור: 5<br>
       ✅ משימה שההורים אישרו: כל הנקודות · באיחור: חצי<br>
       ❌ משימה שלא בוצעה: מינוס חצי מהנקודות שלה<br>
       🔥 כל 5 ימים ברצף של השכמה בזמן: בונוס 15
@@ -442,22 +580,29 @@ function settingsScreen() {
   const child = isChild();
   const perm = (k, title, sub) => p[k] === undefined ? '' : `<div class="perm"><div style="font-size:22px">${p[k] ? '✅' : '⚠️'}</div><div class="pt"><b>${title}</b><span>${sub}</span></div>${p[k] ? '' : `<button class="btn small coral" data-fix="${k}">לתקן</button>`}</div>`;
   const ls = S.me.lastSync ? new Date(S.me.lastSync).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '—';
-  return `<div class="hero" style="padding-bottom:18px"><div class="top"><div><h1>הגדרות</h1><div class="date">${esc(S.me.name)} · ${child ? 'הטלפון של הילדה' : 'טלפון של הורה'}</div></div></div></div><main>
+  return `<div class="hero" style="padding-bottom:18px"><div class="top"><div><h1>הגדרות</h1><div class="date">${esc(S.me.name)} · ${child ? 'הטלפון שלי' : 'טלפון של הורה'}</div></div></div></div><main>
     <div class="sec-title"><h2>👨‍👩‍👧 קוד המשפחה</h2></div>
     <div class="card">
-      <div class="muted small">כל מי שמקליד את הקוד הזה מצטרף למשפחה (אבא, אמא, הילדה)</div>
+      <div class="muted small">כל מי שמקליד את הקוד הזה מצטרף למשפחה – הורים וכל הילדים</div>
       <div class="code">${fmtCode(S.me.code)}</div>
       <button class="btn block" data-share="1">📲 שליחה בוואטסאפ עם קישור להתקנה</button>
     </div>
 
     <div class="sec-title"><h2>🔐 הרשאות בטלפון</h2></div>
     <div class="card">
-      ${perm('notif', 'התראות', child ? 'תזכורות יציאה ומשימות' : 'עדכונים כשהיא קמה / יוצאת')}
+      ${perm('notif', 'התראות', child ? 'תזכורות יציאה ומשימות' : 'עדכונים כשהילדים קמים / יוצאים')}
       ${child ? perm('exact', 'שעונים מדויקים', 'כדי שהשעון יצלצל בדיוק בזמן') : ''}
       ${child ? perm('full', 'מסך מלא לשעון המעורר', 'השעון נפתח על כל המסך גם כשהטלפון נעול') : ''}
       ${perm('battery', 'בלי הגבלת סוללה', 'כדי שאנדרואיד לא "ירדים" את האפליקציה')}
       ${p.samsung ? `<div class="hint">📱 <b>בסמסונג:</b> הגדרות ← סוללה ← הגבלות שימוש ברקע ← לוודא ש"בזמן" <b>לא</b> ברשימת "אפליקציות במצב שינה".</div>` : ''}
     </div>
+
+    ${child ? `<div class="sec-title"><h2>🎨 הצבעים שלי</h2></div>
+    <div class="card">
+      <div class="theme-pick"><button class="tp-purple ${kidInfo().theme !== 'yb' ? 'on' : ''}" data-settheme="purple">סגול 💜</button><button class="tp-yb ${kidInfo().theme === 'yb' ? 'on' : ''}" data-settheme="yb">צהוב-שחור 💛🖤</button></div>
+      <label class="f">אני</label>
+      <div class="seg"><button class="${kidInfo().gender !== 'm' ? 'on' : ''}" data-setgender="f">בת 👧</button><button class="${kidInfo().gender === 'm' ? 'on' : ''}" data-setgender="m">בן 👦</button></div>
+    </div>` : `<div class="card small"><b>👦👧 ילד נוסף?</b><div class="muted">מתקינים אצלו את האפליקציה, בוחרים "אני ילד/ה" ומקלידים את אותו קוד משפחה. כל ילד מקבל לו״ז, נקודות ופרסים משלו, ולמעלה מופיעים כפתורים למעבר בין הילדים.</div></div>`}
 
     ${child ? `<div class="sec-title"><h2>🎵 צלצול השעון המעורר</h2></div>
     <div class="card">
@@ -493,7 +638,7 @@ function onboarding() {
       <div class="logo">⏰</div><h1>בזמן</h1>
       <p>קמים בזמן, יוצאים בזמן, אוספים נקודות ⭐</p>
       <button class="card choice" data-role="parent"><span class="e">👨‍👩‍👧</span><span>אני הורה<small>מנהלים את הלו״ז ומקבלים עדכונים</small></span></button>
-      <button class="card choice" data-role="child"><span class="e">🧒</span><span>אני הילדה / הילד<small>השעון המעורר, התזכורות והנקודות שלי</small></span></button>
+      <button class="card choice" data-role="child"><span class="e">🧒</span><span>אני ילד/ה<small>השעון המעורר, התזכורות והנקודות שלי</small></span></button>
     </div>`;
   }
   const parent = OB.role === 'parent';
@@ -503,17 +648,29 @@ function onboarding() {
     <div class="card">
       <label class="f" style="margin-top:0">איך קוראים לך?</label>
       <input class="in" id="ob-name" placeholder="${parent ? 'למשל: אבא / אמא' : 'השם שלך'}" value="${esc(OB.name || '')}">
+      ${parent ? '' : `<label class="f">אני</label>
+      <div class="seg"><button class="${OB.gender !== 'm' ? 'on' : ''}" data-gender="f">בת 👧</button><button class="${OB.gender === 'm' ? 'on' : ''}" data-gender="m">בן 👦</button></div>
+      <label class="f">הצבעים שלי</label>
+      <div class="theme-pick"><button class="tp-purple ${OB.theme !== 'yb' ? 'on' : ''}" data-obtheme="purple">סגול 💜</button><button class="tp-yb ${OB.theme === 'yb' ? 'on' : ''}" data-obtheme="yb">צהוב-שחור 💛🖤</button></div>`}
       <label class="f">משפחה</label>
       <div class="seg"><button class="${mode === 'new' ? 'on' : ''}" data-mode="new">משפחה חדשה</button><button class="${mode === 'join' ? 'on' : ''}" data-mode="join">יש לי קוד</button></div>
       ${mode === 'join' ? `<label class="f">קוד המשפחה</label><input class="in" id="ob-code" dir="ltr" style="text-align:center;letter-spacing:2px;font-weight:800" placeholder="XXXXX-XXXXX" value="${esc(OB.code || '')}">
         <div class="hint">את הקוד מוצאים אצל מי שכבר מחובר: הגדרות ← קוד המשפחה</div>`
-        : `<div class="hint">נוצר קוד חדש. אחרי זה שולחים אותו בוואטסאפ ל${parent ? 'בת ולבן/בת הזוג' : 'הורים'}.</div>`}
+        : `<div class="hint">נוצר קוד חדש. אחרי זה שולחים אותו בוואטסאפ ל${parent ? 'ילדים ולבן/בת הזוג' : 'הורים'}.</div>`}
       <div class="actions"><button class="btn light" data-ob-back="1">חזרה</button><button class="btn" data-ob-go="1">יאללה! 🚀</button></div>
     </div></div>`;
 }
 function bindOnboarding() {
-  document.querySelectorAll('[data-role]').forEach(b => b.onclick = () => { OB = { step: 2, role: b.dataset.role }; render(); });
-  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { OB.name = val('#ob-name'); OB.mode = b.dataset.mode; render(); });
+  document.querySelectorAll('[data-role]').forEach(b => b.onclick = () => { OB = { step: 2, role: b.dataset.role, gender: 'f', theme: 'purple' }; render(); });
+  document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { OB.name = val('#ob-name'); OB.code = val('#ob-code'); OB.mode = b.dataset.mode; render(); });
+  document.querySelectorAll('[data-gender]').forEach(b => b.onclick = () => {
+    OB.name = val('#ob-name'); OB.code = val('#ob-code'); OB.gender = b.dataset.gender;
+    if (!OB.themeTouched) OB.theme = OB.gender === 'm' ? 'yb' : 'purple';
+    render();
+  });
+  document.querySelectorAll('[data-obtheme]').forEach(b => b.onclick = () => {
+    OB.name = val('#ob-name'); OB.code = val('#ob-code'); OB.theme = b.dataset.obtheme; OB.themeTouched = true; render();
+  });
   const back = $('[data-ob-back]'); if (back) back.onclick = () => { OB = { step: 1 }; render(); };
   const go = $('[data-ob-go]');
   if (go) go.onclick = () => {
@@ -522,7 +679,7 @@ function bindOnboarding() {
     if (!name) return toast('צריך לכתוב שם 🙂');
     let code = mode === 'new' ? B.newCode() : val('#ob-code').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     if (code.length !== 10) return toast('הקוד צריך להיות 10 תווים');
-    S = JSON.parse(B.setup(OB.role, name, code));
+    S = JSON.parse(B.setup2 ? B.setup2(OB.role, name, code, OB.gender || 'f', OB.theme || 'purple') : B.setup(OB.role, name, code));
     TAB = mode === 'new' && OB.role === 'parent' ? 'settings' : 'today';
     render();
     if (mode === 'new') toast('המשפחה נוצרה! עכשיו שולחים את הקוד');
@@ -533,6 +690,11 @@ const val = sel => { const e = $(sel); return e ? e.value : ''; };
 
 // ---------- events ----------
 function bindCommon() {
+  document.querySelectorAll('[data-kid]').forEach(b => b.onclick = () => {
+    KID = b.dataset.kid;
+    try { localStorage.setItem('bz-kid', KID); } catch (e) {}
+    render();
+  });
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { TAB = b.dataset.tab; render(); window.scrollTo(0, 0); });
   document.querySelectorAll('[data-sync]').forEach(b => b.onclick = () => { B.syncNow(); toast('מסנכרן…'); });
   document.querySelectorAll('[data-done]').forEach(b => b.onclick = (e) => {
@@ -548,7 +710,7 @@ function bindCommon() {
     }
     const pts = B.action('task', t.id, occ);
     load();
-    if (pts > 0) { confetti(); toast(`נשלח להורים לאישור 💌 \u200E+${pts}⭐ אחרי אישור`); }
+    if (pts > 0) { if (!S.celebrate) confetti(); toast(`נשלח להורים לאישור 💌 \u200E+${pts}⭐ אחרי אישור`); }
   });
   document.querySelectorAll('[data-notdone]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
@@ -567,8 +729,8 @@ function bindCommon() {
     const l = item(id);
     B.action(ok ? 'approve' : 'reject', id, '');
     load();
-    if (ok) { confetti(); toast(`אושר ✅ ${kidName()} קיבלה \u200E+${l ? l.claim || 0 : 0}⭐`); }
-    else toast('הוחזר אליה – היא יכולה לבצע ולסמן שוב');
+    if (ok) { confetti(); toast(`אושר ✅ ${kidName()} ${G('קיבלה', 'קיבל')} \u200E+${l ? l.claim || 0 : 0}⭐`); }
+    else toast(G('הוחזר אליה – היא יכולה לבצע ולסמן שוב', 'הוחזר אליו – הוא יכול לבצע ולסמן שוב'));
   });
   document.querySelectorAll('[data-live]').forEach(b => b.onclick = () => {
     const on = !S.me.live;
@@ -580,7 +742,7 @@ function bindCommon() {
     e.stopPropagation();
     const pts = B.action(b.dataset.act, b.dataset.ref, b.dataset.occ);
     load();
-    if (pts > 0) { confetti(); toast((b.dataset.act === 'left' ? 'יצאת! 🚀' : 'סיימת! 💪') + ` \u200E+${pts} ⭐`); }
+    if (pts > 0) { if (!S.celebrate) confetti(); toast((b.dataset.act === 'left' ? 'יצאת! 🚀' : 'סיימת! 💪') + ` \u200E+${pts} ⭐`); }
   });
   document.querySelectorAll('[data-new]').forEach(b => b.onclick = () => openEditor(b.dataset.new, null));
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = (e) => {
@@ -610,6 +772,8 @@ function bindCommon() {
   document.querySelectorAll('[data-share]').forEach(b => b.onclick = shareCode);
   document.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => B.fixPerm(b.dataset.fix));
   document.querySelectorAll('[data-test]').forEach(b => b.onclick = () => { B.testAlarm(); toast('השעון יצלצל בעוד 10 שניות – אפשר לנעול את המסך'); });
+  document.querySelectorAll('[data-settheme]').forEach(b => b.onclick = () => { if (B.setProfile) { S = JSON.parse(B.setProfile('', b.dataset.settheme)); render(); } });
+  document.querySelectorAll('[data-setgender]').forEach(b => b.onclick = () => { if (B.setProfile) { S = JSON.parse(B.setProfile(b.dataset.setgender, '')); render(); } });
   document.querySelectorAll('[data-ring]').forEach(b => b.onclick = () => B.pickRingtone && B.pickRingtone());
   document.querySelectorAll('[data-song]').forEach(b => b.onclick = () => B.pickSong && B.pickSong());
   document.querySelectorAll('[data-preview]').forEach(b => b.onclick = () => { if (B.previewRingtone) { B.previewRingtone(); toast('🎵 משמיע 5 שניות'); } });
@@ -620,7 +784,7 @@ function bindCommon() {
 }
 
 function shareCode() {
-  const txt = `⏰ הצטרפות לאפליקציה "בזמן"\n\n1. מורידים ומתקינים:\n${S.apk}\n\n2. פותחים, בוחרים הורה או ילדה, ובוחרים "יש לי קוד"\n\n3. קוד המשפחה: ${fmtCode(S.me.code)}`;
+  const txt = `⏰ הצטרפות לאפליקציה "בזמן"\n\n1. מורידים ומתקינים:\n${S.apk}\n\n2. פותחים, בוחרים הורה או ילד/ה, ובוחרים "יש לי קוד"\n\n3. קוד המשפחה: ${fmtCode(S.me.code)}`;
   B.share(txt);
 }
 
@@ -769,8 +933,9 @@ function openEditor(kind, it) {
       <label class="f" style="margin-top:0">מה צריך לעשות?</label><input class="in" id="f-title" placeholder="למשל: שיעורי בית במתמטיקה" value="${esc(base.title || '')}">
       ${whenFields(d)}
       <label class="f">עד איזו שעה?</label><input class="in time" type="time" id="f-time" value="${esc(base.time || '20:00')}">
-      <label class="f">כמה נקודות?</label>${opts('pts', [3, 5, 10, 15, 20], d.pts, v => v + '⭐')}
-      <label class="f">📷 לבקש תמונה כשמסיימים?</label>${opts('photo', [0, 1], d.photo, v => v ? 'כן, עם תמונה' : 'בלי תמונה')}
+      ${isChild() ? `<div class="hint">⭐ ${isNew ? 'המשימה תהיה שווה' : 'המשימה שווה'} ${d.pts} נקודות. את הנקודות קובעים ההורים.</div>`
+        : `<label class="f">כמה נקודות?</label>${opts('pts', [3, 5, 10, 15, 20], d.pts, v => v + '⭐')}
+      <label class="f">📷 לבקש תמונה כשמסיימים?</label>${opts('photo', [0, 1], d.photo, v => v ? 'כן, עם תמונה' : 'בלי תמונה')}`}
       <div class="hint">🔔 תזכורת חצי שעה לפני ובזמן. "בוצע" נשלח להורים לאישור – בזמן = כל הנקודות, באיחור = חצי. "לא בוצע" (או בלי סימון עד סוף היום) = מינוס חצי.</div>
       <div class="actions">${del}<button class="btn" data-save="1">שמירה</button></div>`, root => {
       bindPick(root, d);
@@ -782,7 +947,8 @@ function openEditor(kind, it) {
         const out = {};
         if (!readWhen(root, d, out)) return;
         MODAL = null; $('#modal-root').innerHTML = '';
-        save(Object.assign(base, out, { id: base.id || uid('tk'), kind: 'task', title, time, pts: d.pts, photo: !!d.photo }));
+        const extra = isChild() ? { pts: base.pts || 5, photo: !!base.photo } : { pts: d.pts, photo: !!d.photo };
+        save(Object.assign(base, out, { id: base.id || uid('tk'), kind: 'task', title, time }, extra));
         toast('המשימה נשמרה ✅');
       };
       bindDel(root, base);

@@ -16,22 +16,40 @@
     if (!it.by) it.by = old ? old.by : D.me.name;
     D.items[it.id] = it;
   };
+  const kidId = name => { const n = String(name || '').trim().replace(/\s+/g, ' ').toLowerCase(); let h = 0x811c9dc5; for (let i = 0; i < n.length; i++) { h ^= n.charCodeAt(i); h = Math.imul(h, 0x01000193); } return 'k_' + (h >>> 0).toString(16).padStart(8, '0'); };
+  const myKid = () => kidId(D.me.name);
   const score = () => {
     if (D.me.role !== 'child') return;
     let pts = 0;
+    const me = myKid();
     Object.values(D.items).forEach(o => {
       if (!o || o.del) return;
+      if ((o.kid || me) !== me) return;
       if (o.kind === 'log') pts += o.pts || 0;
       if (o.kind === 'redeem' && o.status !== 'declined') pts -= o.cost || 0;
     });
-    const old = D.items.score;
-    if (!old || old.pts !== pts) put({ id: 'score', kind: 'score', pts, streak: old ? old.streak || 0 : 0 });
+    const old = D.items['score:' + me];
+    if (!old || old.pts !== pts) put({ id: 'score:' + me, kind: 'score', kid: me, pts, streak: old ? old.streak || 0 : 0 });
   };
-  const state = () => JSON.stringify({ items: D.items, me: Object.assign({ lastSync: Date.now() - 4 * 60000 }, D.me), version: '1.0-test', apk: 'https://example.com/bezman.apk', now: Date.now() });
+  let CEL = 0;
+  const state = () => {
+    const m = D.items['m_' + D.me.dev] || {};
+    const me = Object.assign({ lastSync: Date.now() - 4 * 60000 }, D.me, D.me.role === 'child' ? { kid: myKid(), theme: m.theme || 'purple', gender: m.gender || 'f' } : {});
+    const c = CEL; CEL = 0;
+    return JSON.stringify({ items: D.items, me, version: '1.0-test', apk: 'https://example.com/bezman.apk', now: Date.now(), celebrate: !!c });
+  };
   window.Android = {
     __mock: true,
     state,
     upsert(json) { let a = JSON.parse(json); if (!Array.isArray(a)) a = [a]; a.forEach(put); score(); persist(); return state(); },
+    setup2(role, name, code, gender, theme) {
+      D.me.role = role; D.me.name = name; D.me.code = code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      const m = { id: 'm_' + D.me.dev, kind: 'member', role, name, by: name };
+      if (role === 'child') Object.assign(m, { kid: kidId(name), gender, theme, since: Date.now() });
+      put(m); score(); persist(); return state();
+    },
+    setProfile(gender, theme) { const m = D.items['m_' + D.me.dev]; if (gender) m.gender = gender; if (theme) m.theme = theme; put(m); persist(); return state(); },
+    _cel() { CEL = 1; },
     setup(role, name, code) {
       D.me.role = role; D.me.name = name; D.me.code = code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
       put({ id: 'm_' + D.me.dev, kind: 'member', role, name, by: name }); score(); persist(); return state();
@@ -49,7 +67,8 @@
         const id = `left:${ref}:${occ}`; if (D.items[id]) return -1;
         const leave = at(occ, mins(it.start) - (it.travel || 0)); const now = Date.now();
         const pts = now <= leave + 120000 ? 10 : now <= leave + 600000 ? 5 : 2;
-        put({ id, kind: 'log', type: 'left', ref, occ, pts, title: it.title, at: now, late: Math.max(0, Math.round((now - leave) / 60000)) });
+        if (pts === 10) CEL = 1;
+        put({ id, kind: 'log', kid: myKid(), type: 'left', ref, occ, pts, title: it.title, at: now, late: Math.max(0, Math.round((now - leave) / 60000)) });
         score(); persist(); return pts;
       }
       if (what === 'task' || what === 'photo') {
@@ -57,14 +76,15 @@
         if (ex && !ex.del && ex.status !== 'rejected') return -1;
         const due = at(occ, mins(it.time) >= 0 ? mins(it.time) : 1439); const base = it.pts || 5;
         const claim = Date.now() <= due ? base : Math.max(1, Math.floor(base / 2));
-        put({ id, kind: 'log', type: 'task_done', status: 'pending', claim, ref, occ, pts: 0, title: it.title, at: Date.now(), late: Date.now() > due, photo: what === 'photo', by: D.me.name });
+        if (Date.now() <= due) CEL = 1;
+        put({ id, kind: 'log', kid: myKid(), type: 'task_done', status: 'pending', claim, ref, occ, pts: 0, title: it.title, at: Date.now(), late: Date.now() > due, photo: what === 'photo', by: D.me.name });
         score(); persist(); return claim;
       }
       if (what === 'missed') {
         const id = `task:${ref}:${occ}`; const ex = D.items[id];
         if (ex && !ex.del && ex.status !== 'rejected') return -1;
         const pen = Math.max(1, Math.floor((it.pts || 5) / 2));
-        put({ id, kind: 'log', type: 'task_missed', status: 'missed', ref, occ, pts: -pen, title: it.title, at: Date.now(), by: D.me.name });
+        put({ id, kind: 'log', kid: myKid(), type: 'task_missed', status: 'missed', ref, occ, pts: -pen, title: it.title, at: Date.now(), by: D.me.name });
         score(); persist(); return pen;
       }
       return -1;

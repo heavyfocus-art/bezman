@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setAllowFileAccess(true);
         s.setTextZoom(100);
+        s.setMediaPlaybackRequiresUserGesture(false);
         web.setWebChromeClient(new WebChromeClient());
         web.setWebViewClient(new WebViewClient());
         web.addJavascriptInterface(new Bridge(this), "Android");
@@ -122,7 +123,7 @@ public class MainActivity extends Activity {
         new Thread(() -> {
             byte[] jpg = Photos.compress(ac, src);
             if (jpg == null) {
-                runOnUiThread(() -> Toast.makeText(ac, "לא הצלחתי לקרוא את התמונה, נסי שוב", Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> Toast.makeText(ac, "לא הצלחתי לקרוא את התמונה, נסו שוב", Toast.LENGTH_LONG).show());
                 return;
             }
             String logId = "task:" + task + ":" + occ;
