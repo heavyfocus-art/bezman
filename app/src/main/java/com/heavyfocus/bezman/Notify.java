@@ -170,7 +170,8 @@ public final class Notify {
         boolean meBoy = child && Store.meBoy(c);
         for (JSONObject[] ch : changes) {
             JSONObject old = ch[0], n = ch[1];
-            if (!U.alive(n) || me.equals(n.optString("dev"))) continue;
+            boolean alarmGone = n != null && n.optBoolean("del") && "alarm".equals(n.optString("kind"));
+            if ((!U.alive(n) && !alarmGone) || me.equals(n.optString("dev"))) continue;
             if (n.optLong("upd") < now - 12 * U.HOUR) continue;
             String kind = n.optString("kind");
             if ("member".equals(kind) || "score".equals(kind)) continue;
@@ -243,6 +244,10 @@ public final class Notify {
                 } else if ("redeem".equals(kind) && "pending".equals(n.optString("status"))) {
                     family(c, id + ":pending", "🎁 " + kid + " רוצה לממש פרס",
                             title + " · " + n.optInt("cost") + " ⭐ – נכנסים לאפליקציה כדי לאשר");
+                } else if (byChild && old != null && "alarm".equals(kind)
+                        && (n.optBoolean("del") || (old.optBoolean("on", true) && !n.optBoolean("on", true)))) {
+                    family(c, id + ":off:" + n.optLong("upd"), "⏰ " + kid + (n.optBoolean("del") ? g.apply(" מחקה", " מחק") : g.apply(" כיבתה", " כיבה"))
+                            + " שעון מעורר " + n.optString("time"), "כדאי לבדוק שזה בסדר");
                 } else if (byChild && old == null && ("task".equals(kind) || "event".equals(kind) || "alarm".equals(kind))) {
                     String what = "task".equals(kind) ? "משימה" : "event".equals(kind) ? "חוג/יציאה" : "שעון מעורר";
                     String t = "alarm".equals(kind) ? n.optString("time") : title;

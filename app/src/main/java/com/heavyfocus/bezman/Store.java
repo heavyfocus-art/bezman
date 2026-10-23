@@ -436,6 +436,7 @@ public final class Store {
 
     /** A parent approves (ok=true) or sends back (ok=false) a task she marked done. */
     public static boolean approve(Context c, String logId, boolean ok) {
+        if (isChild(c) || !Pin.unlocked(c)) return false;
         JSONObject r = get(c, logId);
         if (!U.alive(r) || !"task_done".equals(r.optString("type"))) return false;
         if (!"pending".equals(r.optString("status"))) return false;

@@ -368,6 +368,10 @@ function render() {
     bars();
     app.innerHTML = onboarding(); bindOnboarding(); return;
   }
+  if (!isChild() && S.me.unlocked === false) {
+    document.body.dataset.theme = 'purple'; bars();
+    app.innerHTML = lockScreen(); bindLock(); return;
+  }
   pickKid();
   document.body.dataset.theme = kidInfo().theme === 'yb' ? 'yb' : 'purple';
   bars();
@@ -489,6 +493,7 @@ function parentToday() {
   const gifts = `<button class="btn ghost block" data-new="gift">${kidInfo().theme === 'yb' ? '💛' : '💜'} לתת בונוס / מילה טובה ל${esc(kid)}</button>`;
   return hero(`${esc(kid)} היום`, dateLine()) + `<main>
     ${permBanner()}
+    ${!S.me.pinSet ? `<div class="banner" style="background:var(--sun-soft);color:#6b4b00"><div style="flex:1">🔒 כדאי לקבוע קוד הורים – כדי שאף ילד לא יוכל להתחבר כהורה ולאשר לעצמו משימות</div><button class="btn small" data-setpin="1">לקבוע</button></div>` : ''}
     ${!joined ? `<div class="card"><b>📲 אף ילד עוד לא מחובר</b><p class="muted small">מתקינים את האפליקציה בטלפון של הילד/ה, בוחרים "אני ילד/ה" ומקלידים את קוד המשפחה.</p><button class="btn block" data-share="1">שליחת הקוד בוואטסאפ</button></div>` : ''}
     ${approvalsCard()}
     ${pending.map(redeemCard).join('')}
@@ -595,6 +600,11 @@ function settingsScreen() {
       <button class="btn block" data-share="1">📲 שליחה בוואטסאפ עם קישור להתקנה</button>
     </div>
 
+    ${!child ? `<div class="sec-title"><h2>🔒 קוד הורים</h2></div>
+    <div class="card"><div style="display:flex;align-items:center;gap:12px">
+      <div style="flex:1"><b>${S.me.pinSet ? 'מוגדר ✅' : 'עוד לא הוגדר ⚠️'}</b><div class="small muted">נדרש כדי להצטרף כהורה וכדי להוציא טלפון של ילד מהמשפחה</div></div>
+      <button class="btn ${S.me.pinSet ? 'light' : ''} small" data-setpin="1">${S.me.pinSet ? 'שינוי' : 'לקבוע'}</button></div></div>` : ''}
+
     <div class="sec-title"><h2>🔐 הרשאות בטלפון</h2></div>
     <div class="card">
       ${perm('notif', 'התראות', child ? 'תזכורות יציאה ומשימות' : 'עדכונים כשהילדים קמים / יוצאים')}
@@ -640,6 +650,51 @@ function settingsScreen() {
 
     <div class="card small muted center">בזמן · גרסה ${esc(S.version)}<br><button class="btn danger small" style="margin-top:10px" data-reset="1">יציאה מהמשפחה והתחלה מחדש</button></div>
   </main>`;
+}
+
+// ---------- parents' PIN ----------
+function lockScreen() {
+  return `<div class="ob">
+    <div class="logo">🔒</div><h1>קוד הורים</h1>
+    <div class="card">
+      ${S.me.pinSet ? `<p class="muted" style="margin-top:0">הטלפון הזה הצטרף למשפחה כהורה. כדי להמשיך, מקלידים את קוד ההורים שקבעו ההורים בהגדרות.</p>
+        <input class="in time" id="pin-in" type="password" inputmode="numeric" maxlength="8" placeholder="••••">
+        <div class="actions"><button class="btn light" data-lockreset="1">זה לא הורה</button><button class="btn" data-unlock="1">כניסה 🔓</button></div>`
+      : `<p class="muted" style="margin-top:0">⏳ מחכים לנתוני המשפחה מהטלפונים האחרים… זה לוקח עד כמה דקות. צריך שלפחות טלפון אחד נוסף במשפחה יהיה דלוק ומחובר.</p>
+        <div class="actions"><button class="btn light" data-lockreset="1">ביטול</button><button class="btn ghost" data-sync="1">🔄 לבדוק שוב</button></div>`}
+    </div></div>`;
+}
+function bindLock() {
+  const u = $('[data-unlock]');
+  if (u) u.onclick = () => {
+    if (B.unlockPin($('#pin-in').value)) { toast('ברוכים הבאים 👋'); load(); }
+    else { toast('קוד לא נכון'); $('#pin-in').value = ''; }
+  };
+  const s = $('[data-sync]'); if (s) s.onclick = () => { B.syncNow(); toast('בודק…'); setTimeout(load, 4000); };
+  const r = $('[data-lockreset]'); if (r) r.onclick = () => { S = JSON.parse(B.reset()); OB = { step: 1 }; render(); };
+}
+function pinModal(title, text, onOk, needOld) {
+  openModal(`<h3>${esc(title)}</h3><p class="muted small">${esc(text)}</p>
+    ${needOld === true ? `<label class="f">הקוד הנוכחי</label><input class="in time" id="pin-old" type="password" inputmode="numeric" maxlength="8">` : ''}
+    <label class="f">${needOld === 'check' ? 'קוד הורים' : 'קוד חדש (4–8 ספרות)'}</label><input class="in time" id="pin-new" type="password" inputmode="numeric" maxlength="8">
+    ${needOld === 'check' ? '' : `<label class="f">שוב, לאימות</label><input class="in time" id="pin-new2" type="password" inputmode="numeric" maxlength="8">`}
+    <div class="actions"><button class="btn light" data-c="no">ביטול</button><button class="btn" data-c="yes">אישור</button></div>`, root => {
+    root.querySelector('[data-c=no]').onclick = closeModal;
+    root.querySelector('[data-c=yes]').onclick = () => {
+      const o = root.querySelector('#pin-old'), n = root.querySelector('#pin-new').value, n2 = root.querySelector('#pin-new2');
+      if (n2 && n !== n2.value) return toast('שני הקודים לא זהים');
+      onOk(n, o ? o.value : '');
+    };
+  });
+}
+function openSetPin() {
+  pinModal(S.me.pinSet ? 'שינוי קוד הורים' : 'קביעת קוד הורים',
+    'הקוד נדרש כשמצטרפים למשפחה כהורה, וכשרוצים להוציא טלפון של ילד מהמשפחה. לא לספר אותו לילדים 🤫',
+    (n, o) => {
+      if (!/^\d{4,8}$/.test(n)) return toast('הקוד צריך להיות 4 עד 8 ספרות');
+      if (B.setPin(n, o)) { MODAL = null; $('#modal-root').innerHTML = ''; load(); toast('קוד ההורים נשמר 🔒'); }
+      else toast(S.me.pinSet ? 'הקוד הנוכחי לא נכון' : 'לא הצלחתי לשמור');
+    }, S.me.pinSet ? true : false);
 }
 
 // ---------- onboarding ----------
@@ -691,6 +746,7 @@ function bindOnboarding() {
     let code = mode === 'new' ? B.newCode() : val('#ob-code').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     if (code.length !== 10) return toast('הקוד צריך להיות 10 תווים');
     S = JSON.parse(B.setup2 ? B.setup2(OB.role, name, code, OB.gender || 'f', OB.theme || 'purple') : B.setup(OB.role, name, code));
+    if (OB.role === 'parent' && mode === 'join' && B.lockParent) { B.lockParent(); S = JSON.parse(B.state()); }
     TAB = mode === 'new' && OB.role === 'parent' ? 'settings' : 'today';
     render();
     if (mode === 'new') toast('המשפחה נוצרה! עכשיו שולחים את הקוד');
@@ -805,7 +861,12 @@ function bindCommon() {
       };
     });
   });
-  document.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => confirmBox('לצאת מהמשפחה?', 'כל הנתונים בטלפון הזה יימחקו. אפשר להצטרף שוב עם הקוד.', 'כן, לצאת', () => {
+  document.querySelectorAll('[data-setpin]').forEach(b => b.onclick = openSetPin);
+  document.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => (isChild() && S.me.pinSet && B.checkPin) ? pinModal('יציאה מהמשפחה', 'בטלפון של ילד צריך קוד הורים כדי לצאת מהמשפחה.', (n) => {
+    if (!B.checkPin(n)) return toast('קוד לא נכון');
+    MODAL = null; $('#modal-root').innerHTML = '';
+    S = JSON.parse(B.reset()); OB = { step: 1 }; TAB = 'today'; render();
+  }, 'check') : confirmBox('לצאת מהמשפחה?', 'כל הנתונים בטלפון הזה יימחקו. אפשר להצטרף שוב עם הקוד.', 'כן, לצאת', () => {
     S = JSON.parse(B.reset()); OB = { step: 1 }; TAB = 'today'; render();
   }, true));
 }

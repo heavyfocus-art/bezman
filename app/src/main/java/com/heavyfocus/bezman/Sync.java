@@ -281,6 +281,7 @@ public final class Sync {
             } catch (Exception ignored) {
             }
         }
+        Pin.autoUnlockIfNoPin(c);
         try {
             Photos.catchUp(c);
         } catch (Exception ignored) {

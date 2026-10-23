@@ -40,7 +40,9 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            // shrink + obfuscate the code so it is much harder to read or change
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig project.hasProperty('forPlay') ? signingConfigs.upload : signingConfigs.release
         }
         debug {

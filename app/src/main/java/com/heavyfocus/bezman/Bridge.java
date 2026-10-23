@@ -33,6 +33,7 @@ public class Bridge {
         JSONObject me = U.obj("role", Store.role(c), "name", Store.name(c), "dev", Store.dev(c),
                 "code", Store.code(c), "lastSync", Store.getLong(c, "lastSync"),
                 "ringtone", Store.getStr(c, "ringtoneName"),
+                "unlocked", Pin.unlocked(c), "pinSet", Pin.exists(c),
                 "live", Store.p(c).getBoolean("live", true));
         if (Store.isChild(c)) {
             U.put(me, "kid", Store.myKid(c));
@@ -49,6 +50,7 @@ public class Bridge {
 
     @JavascriptInterface
     public String upsert(String json) {
+        if (!Store.isChild(c) && !Pin.unlocked(c)) return state(); // locked parent phone
         try {
             JSONArray arr = json.trim().startsWith("[") ? new JSONArray(json) : new JSONArray().put(new JSONObject(json));
             Store.upsertLocal(c, arr);
@@ -199,6 +201,31 @@ public class Bridge {
     @JavascriptInterface
     public String photo(String logId) {
         return Photos.dataUrl(c, logId);
+    }
+
+    // ---------- parents' PIN ----------
+    @JavascriptInterface
+    public boolean setPin(String newPin, String oldPin) {
+        return Pin.set(c, newPin, oldPin);
+    }
+
+    /** Unlocks this parent phone. */
+    @JavascriptInterface
+    public boolean unlockPin(String pin) {
+        boolean ok = Pin.unlock(c, pin);
+        if (ok) Store.afterLocalChange(c);
+        return ok;
+    }
+
+    /** Only checks (used on a child's phone before leaving the family). */
+    @JavascriptInterface
+    public boolean checkPin(String pin) {
+        return Pin.check(c, pin);
+    }
+
+    @JavascriptInterface
+    public void lockParent() {
+        Pin.lock(c);
     }
 
     @JavascriptInterface

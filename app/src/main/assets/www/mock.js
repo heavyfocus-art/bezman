@@ -34,7 +34,7 @@
   let CEL = 0;
   const state = () => {
     const m = D.items['m_' + D.me.dev] || {};
-    const me = Object.assign({ lastSync: Date.now() - 4 * 60000 }, D.me, D.me.role === 'child' ? { kid: myKid(), theme: m.theme || 'purple', gender: m.gender || 'f' } : {});
+    const me = Object.assign({ lastSync: Date.now() - 4 * 60000, unlocked: true }, D.me, { pinSet: !!(D.items.pin && D.items.pin.hash) }, D.me.role === 'child' ? { kid: myKid(), theme: m.theme || 'purple', gender: m.gender || 'f' } : {});
     const c = CEL; CEL = 0;
     return JSON.stringify({ items: D.items, me, version: '1.0-test', apk: 'https://example.com/bezman.apk', now: Date.now(), celebrate: !!c });
   };
@@ -98,6 +98,10 @@
     takePhoto(id, occ) { this.action('photo', id, occ); persist(); setTimeout(() => window.onPhotoSent(), 50); },
     photo(id) { return D.items[id] && D.items[id].photo ? 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="#ffd166"/><text x="100" y="120" font-size="80" text-anchor="middle">📚</text></svg>') : ''; },
     setLive(on) { D.me.live = on; persist(); },
+    setPin(n, o) { const p = D.items.pin; if (p && p.hash !== 'h' + o) return false; put({ id: 'pin', kind: 'config', salt: 's', hash: 'h' + n }); persist(); return true; },
+    checkPin(n) { const p = D.items.pin; return !!p && p.hash === 'h' + n; },
+    unlockPin(n) { if (!this.checkPin(n)) return false; D.me.unlocked = true; persist(); return true; },
+    lockParent() { D.me.unlocked = false; persist(); },
     testAlarm() { console.log('test alarm'); },
     toast(s) { console.log('toast', s); },
     openUrl(u) { console.log('open', u); },
