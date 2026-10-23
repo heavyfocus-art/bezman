@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>בזמן – מדיניות פרטיות</title>
+<style>
+  :root { --ink: #241c4f; --muted: #5a5577; --bg: #f6f3ff; --card: #fff; --acc: #6c4bf5; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ece9ff; --muted: #b8b3d6; --bg: #17132e; --card: #221c44; --acc: #a993ff; } }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; line-height: 1.65; }
+  main { max-width: 760px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { margin: 0 0 4px; font-size: 28px; }
+  h2 { font-size: 19px; margin: 28px 0 8px; color: var(--acc); }
+  .card { background: var(--card); border-radius: 18px; padding: 18px 20px; margin-top: 18px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  ul { padding-inline-start: 20px; }
+  .en { direction: ltr; text-align: left; }
+</style>
+</head>
+<body>
+<main>
+  <h1>⏰ בזמן – מדיניות פרטיות</h1>
+  <div class="muted">עודכן: 23 באוקטובר 2026</div>
+
+  <div class="card">
+    <p>"בזמן" היא אפליקציה משפחתית שעוזרת לילדים לקום, לצאת ולסיים משימות בזמן, ומעדכנת את ההורים. האפליקציה נבנתה לשימוש של משפחה אחת ואינה מיועדת למכירה.</p>
+
+    <h2>איזה מידע נשמר</h2>
+    <ul>
+      <li>השם שכל אחד מקליד באפליקציה (למשל "אבא" או שם הילד).</li>
+      <li>הלו״ז שהמשפחה מכניסה: שעונים מעוררים, חוגים, משימות, נקודות ופרסים.</li>
+      <li>מתי הילד כיבה את השעון, סימן "יצאתי" או "בוצע".</li>
+      <li>תמונה שהילד מצלם כהוכחה לביצוע משימה, רק במשימות שבהן ההורה ביקש תמונה.</li>
+    </ul>
+    <p>האפליקציה <b>לא</b> אוספת מיקום, אנשי קשר, מספר טלפון, כתובת מייל או מזהה פרסום, ואין בה פרסומות או כלי מעקב.</p>
+
+    <h2>איפה המידע נמצא ומי רואה אותו</h2>
+    <p>המידע נשמר בטלפונים של בני המשפחה. כדי שהטלפונים יתעדכנו זה מזה, המידע עובר דרך שירות העברת ההודעות הציבורי ntfy.sh, כשהוא <b>מוצפן</b> (AES-256) במפתח שנגזר מקוד המשפחה. רק מי שיש לו את קוד המשפחה יכול לקרוא אותו. ההודעות נמחקות מהשירות אחרי זמן קצר (בדרך כלל עד 12 שעות, ותמונות עד 3 שעות).</p>
+    <p>המידע לא נמכר ולא מועבר לאף גורם אחר.</p>
+
+    <h2>הרשאות</h2>
+    <ul>
+      <li><b>התראות ושעונים מדויקים:</b> כדי שהשעון המעורר והתזכורות יפעלו בזמן.</li>
+      <li><b>מסך מלא כשהטלפון נעול:</b> כדי שהשעון המעורר ייפתח על כל המסך.</li>
+      <li><b>שירות קבוע ברקע:</b> כדי שעדכונים יגיעו לשאר הטלפונים במשפחה תוך שניות. אפשר לכבות אותו בהגדרות.</li>
+      <li><b>מצלמה/גלריה:</b> רק כשהילד בוחר לצלם תמונה של משימה, דרך אפליקציית המצלמה של הטלפון.</li>
+    </ul>
+
+    <h2>מחיקת מידע</h2>
+    <p>בהגדרות ← "יציאה מהמשפחה והתחלה מחדש" נמחק כל המידע מהטלפון. הסרת האפליקציה מוחקת אותו גם כן.</p>
+
+    <h2>ילדים</h2>
+    <p>האפליקציה מופעלת על ידי ההורים עבור הילדים שלהם, וההורים קובעים את הלו״ז, הנקודות והפרסים.</p>
+
+    <h2>יצירת קשר</h2>
+    <p>דרך כתובת המייל של המפתח שמופיעה בדף האפליקציה ב-Google Play.</p>
+  </div>
+
+  <div class="card en">
+    <h2>Summary (English)</h2>
+    <p>"Bezman" is a private family app for a child's wake-up alarm, leave-on-time reminders, tasks and reward points. It stores only the names, schedule, task status and optional task photos that the family enters. Data stays on the family's phones and is synced end-to-end encrypted (AES-256, key derived from the family code) through the public relay ntfy.sh, where messages expire within hours. No location, contacts, advertising ID, ads or analytics. Nothing is sold or shared. Leaving the family in Settings, or uninstalling, deletes the data from the phone. Contact: the developer e-mail shown on the app's Google Play page.</p>
+  </div>
+</main>
+</body>
+</html>

@@ -21,7 +21,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.13'
 
       - name: Build APK
         run: gradle assembleRelease --no-daemon --stacktrace
@@ -29,15 +29,36 @@ jobs:
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk bezman.apk
 
+      - name: Build AAB for Google Play
+        env:
+          UPLOAD_KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_B64 }}
+          UPLOAD_KEYSTORE_PASSWORD: ${{ secrets.UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$UPLOAD_KEYSTORE_B64" ]; then
+            # private upload key from GitHub secrets (optional)
+            echo "$UPLOAD_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.p12"
+            export UPLOAD_KEYSTORE_PATH="$RUNNER_TEMP/upload.p12"
+            gradle bundleRelease -PforPlay --no-daemon --stacktrace
+            rm -f "$RUNNER_TEMP/upload.p12"
+          else
+            gradle bundleRelease --no-daemon --stacktrace
+          fi
+          cp app/build/outputs/bundle/release/app-release.aab bezman.aab
+
       - uses: actions/upload-artifact@v4
         with:
           name: bezman-apk
-          path: bezman.apk
+          path: |
+            bezman.apk
+            bezman.aab
+          if-no-files-found: warn
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.${{ github.run_number }}
           name: בזמן 1.${{ github.run_number }}
-          files: bezman.apk
+          files: |
+            bezman.apk
+            bezman.aab
           make_latest: true

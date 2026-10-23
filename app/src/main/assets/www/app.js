@@ -365,10 +365,12 @@ function render() {
   const app = $('#app');
   if (!S.me.role || !S.me.code) {
     document.body.dataset.theme = OB.theme || 'purple';
+    bars();
     app.innerHTML = onboarding(); bindOnboarding(); return;
   }
   pickKid();
   document.body.dataset.theme = kidInfo().theme === 'yb' ? 'yb' : 'purple';
+  bars();
   let body = '';
   if (TAB === 'today') body = isChild() ? childToday() : parentToday();
   else if (TAB === 'plan') body = planScreen();
@@ -385,6 +387,11 @@ function render() {
   bindCommon();
   fillPhotos();
   if (TAB === 'today') tickTimer = setInterval(() => { if (!MODAL && TAB === 'today') render(); }, 30000);
+}
+let lastBars = '';
+function bars() {
+  const c = document.body.dataset.theme === 'yb' ? '#000000' : '#2b2160';
+  if (c !== lastBars && B.setBars) { lastBars = c; B.setBars(c); }
 }
 function navBtn(id, ico, txt, badge) {
   return `<button class="${TAB === id ? 'on' : ''}" data-tab="${id}"><span class="ni">${ico}</span><span>${txt}${badge ? ` <span class="badge">${badge}</span>` : ''}</span></button>`;
@@ -624,8 +631,12 @@ function settingsScreen() {
 
     <div class="sec-title"><h2>🔄 סנכרון</h2></div>
     <div class="card"><div class="small muted">סנכרון אחרון: ${ls}</div>
-      <div class="actions" style="margin-top:10px"><button class="btn ghost" data-sync="1">לסנכרן עכשיו</button><button class="btn light" data-update="1">📥 עדכון גרסה</button></div>
+      <div class="actions" style="margin-top:10px"><button class="btn ghost" data-sync="1">לסנכרן עכשיו</button><button class="btn light" data-update="1">📥 ${S.fromPlay ? 'עדכון ב-Play' : 'עדכון גרסה'}</button></div>
     </div>
+
+    ${!child ? `<div class="sec-title"><h2>▶️ Google Play</h2></div>
+    <div class="card"><div class="small muted">${(item('cfg') || {}).playLink ? 'קישור ההצטרפות שמור – הוא נשלח עם קוד המשפחה' : 'אחרי שהאפליקציה עולה לבדיקה פנימית ב-Play, מדביקים כאן את קישור ההצטרפות'}</div>
+      <button class="btn ghost block" style="margin-top:10px" data-playlink="1">🔗 ${(item('cfg') || {}).playLink ? 'שינוי הקישור' : 'הדבקת קישור ההצטרפות'}</button></div>` : ''}
 
     <div class="card small muted center">בזמן · גרסה ${esc(S.version)}<br><button class="btn danger small" style="margin-top:10px" data-reset="1">יציאה מהמשפחה והתחלה מחדש</button></div>
   </main>`;
@@ -777,14 +788,34 @@ function bindCommon() {
   document.querySelectorAll('[data-ring]').forEach(b => b.onclick = () => B.pickRingtone && B.pickRingtone());
   document.querySelectorAll('[data-song]').forEach(b => b.onclick = () => B.pickSong && B.pickSong());
   document.querySelectorAll('[data-preview]').forEach(b => b.onclick = () => { if (B.previewRingtone) { B.previewRingtone(); toast('🎵 משמיע 5 שניות'); } });
-  document.querySelectorAll('[data-update]').forEach(b => b.onclick = () => B.openUrl(S.apk));
+  document.querySelectorAll('[data-update]').forEach(b => b.onclick = () => B.openUpdate ? B.openUpdate() : B.openUrl(S.apk));
+  document.querySelectorAll('[data-playlink]').forEach(b => b.onclick = () => {
+    const cur = item('cfg') || { id: 'cfg', kind: 'config' };
+    openModal(`<h3>🔗 קישור ההצטרפות מ-Google Play</h3>
+      <p class="muted small">מעתיקים מ-Play Console: בדיקה פנימית ← בודקים ← "העתקת הקישור". מדביקים כאן, ומעכשיו כפתור השליחה בוואטסאפ ישלח את הקישור הזה במקום קובץ ההתקנה.</p>
+      <input class="in" id="f-link" dir="ltr" placeholder="https://play.google.com/apps/internaltest/..." value="${esc(cur.playLink || '')}">
+      <div class="actions"><button class="btn light" data-c="no">ביטול</button><button class="btn" data-save="1">שמירה</button></div>`, root => {
+      root.querySelector('[data-c=no]').onclick = closeModal;
+      root.querySelector('[data-save]').onclick = () => {
+        const link = root.querySelector('#f-link').value.trim();
+        if (link && !/^https:\/\/play\.google\.com\//.test(link)) return toast('הקישור צריך להתחיל ב-https://play.google.com/');
+        MODAL = null; $('#modal-root').innerHTML = '';
+        save(Object.assign({}, cur, { playLink: link }));
+        toast(link ? 'נשמר ✅' : 'הקישור נמחק');
+      };
+    });
+  });
   document.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => confirmBox('לצאת מהמשפחה?', 'כל הנתונים בטלפון הזה יימחקו. אפשר להצטרף שוב עם הקוד.', 'כן, לצאת', () => {
     S = JSON.parse(B.reset()); OB = { step: 1 }; TAB = 'today'; render();
   }, true));
 }
 
 function shareCode() {
-  const txt = `⏰ הצטרפות לאפליקציה "בזמן"\n\n1. מורידים ומתקינים:\n${S.apk}\n\n2. פותחים, בוחרים הורה או ילד/ה, ובוחרים "יש לי קוד"\n\n3. קוד המשפחה: ${fmtCode(S.me.code)}`;
+  const cfg = item('cfg');
+  const link = cfg && cfg.playLink;
+  const txt = link
+    ? `⏰ הצטרפות לאפליקציה "בזמן"\n\n1. פותחים את הקישור (בחשבון Google שנתתם לי):\n${link}\n\n2. לוחצים "הצטרפות כבודק/ת", ואז "הורדה מ-Google Play" ומתקינים\n\n3. פותחים, בוחרים הורה או ילד/ה, ובוחרים "יש לי קוד"\n\n4. קוד המשפחה: ${fmtCode(S.me.code)}`
+    : `⏰ הצטרפות לאפליקציה "בזמן"\n\n1. מורידים ומתקינים:\n${S.apk}\n\n2. פותחים, בוחרים הורה או ילד/ה, ובוחרים "יש לי קוד"\n\n3. קוד המשפחה: ${fmtCode(S.me.code)}`;
   B.share(txt);
 }
 

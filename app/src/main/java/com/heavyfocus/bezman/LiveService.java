@@ -66,7 +66,7 @@ public class LiveService extends Service {
                 .setContentIntent(Notify.openApp(this))
                 .build();
         try {
-            if (Build.VERSION.SDK_INT >= 29) startForeground(1002, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            if (Build.VERSION.SDK_INT >= 34) startForeground(1002, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             else startForeground(1002, n);
         } catch (Exception e) {
             stopSelf();
@@ -122,6 +122,12 @@ public class LiveService extends Service {
                 if (cc != null) cc.disconnect();
             }
         }
+    }
+
+    /** Android 15+: if the system says the time is up, stop; the 15-minute check keeps working. */
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        stopSelf();
     }
 
     @Override

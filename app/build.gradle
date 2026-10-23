@@ -6,17 +6,18 @@ def runNum = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
 
 android {
     namespace 'com.heavyfocus.bezman'
-    compileSdk 34
+    compileSdk 36
 
     defaultConfig {
         applicationId 'com.heavyfocus.bezman'
         minSdk 26
-        targetSdk 34
+        targetSdk 36
         versionCode runNum
         versionName "1.${runNum}"
     }
 
     signingConfigs {
+        // The APK people install by hand (keeps working with the copies already installed).
         release {
             storeFile file('bezman.keystore')
             storeType 'pkcs12'
@@ -24,12 +25,23 @@ android {
             keyAlias 'bezman'
             keyPassword 'bezman2026'
         }
+        // The private upload key for Google Play (kept in GitHub secrets, never in the code).
+        upload {
+            def ks = System.getenv("UPLOAD_KEYSTORE_PATH")
+            if (ks) {
+                storeFile file(ks)
+                storeType 'pkcs12'
+                storePassword System.getenv("UPLOAD_KEYSTORE_PASSWORD")
+                keyAlias 'upload'
+                keyPassword System.getenv("UPLOAD_KEYSTORE_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
+            signingConfig project.hasProperty('forPlay') ? signingConfigs.upload : signingConfigs.release
         }
         debug {
             signingConfig signingConfigs.release

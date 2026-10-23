@@ -14,7 +14,7 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
@@ -29,6 +29,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:enableOnBackInvokedCallback="true"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustResize">
@@ -56,7 +57,11 @@
         <service
             android:name=".LiveService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps an open connection to the family's private channel so a parent's approval and a child's wake-up / leaving status reach the other family phones within seconds. The user can turn it off in the app settings." />
+        </service>
 
         <service
             android:name=".SyncJob"

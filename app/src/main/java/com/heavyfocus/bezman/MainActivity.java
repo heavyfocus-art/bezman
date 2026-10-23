@@ -21,12 +21,19 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.graphics.Color;
+import android.graphics.Insets;
+import android.view.View;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
+import android.widget.LinearLayout;
 
 import java.lang.ref.WeakReference;
 
 public class MainActivity extends Activity {
     static WeakReference<MainActivity> current = new WeakReference<>(null);
     WebView web;
+    View topBar, bottomBar;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -43,10 +50,77 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient());
         web.addJavascriptInterface(new Bridge(this), "Android");
         web.loadUrl("file:///android_asset/www/index.html");
-        setContentView(web);
+        setContentView(buildRoot());
+        setupBack();
         askNotifications();
         SyncJob.schedule(this);
         Sched.reschedule(this);
+    }
+
+    /**
+     * Newer Android draws the app behind the status and navigation bars.
+     * Two colored strips keep the page clear of them (and of the keyboard).
+     */
+    View buildRoot() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        topBar = new View(this);
+        bottomBar = new View(this);
+        topBar.setBackgroundColor(0xFF2B2160);
+        bottomBar.setBackgroundColor(Color.WHITE);
+        root.addView(topBar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0));
+        root.addView(web, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(bottomBar, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0));
+        if (Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(false);
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(Color.TRANSPARENT);
+            root.setOnApplyWindowInsetsListener((v, ins) -> {
+                Insets bars = ins.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                Insets ime = ins.getInsets(WindowInsets.Type.ime());
+                setHeight(topBar, bars.top);
+                setHeight(bottomBar, Math.max(bars.bottom, ime.bottom));
+                v.setPadding(bars.left, 0, bars.right, 0);
+                return WindowInsets.CONSUMED;
+            });
+            WindowInsetsController wic = getWindow().getInsetsController();
+            if (wic != null) {
+                // light icons on the dark top strip, dark icons on the white bottom strip
+                wic.setSystemBarsAppearance(WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                        WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+            }
+        }
+        return root;
+    }
+
+    static void setHeight(View v, int h) {
+        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) v.getLayoutParams();
+        if (lp.height != h) {
+            lp.height = h;
+            v.setLayoutParams(lp);
+        }
+    }
+
+    /** The screen tells us its top color (purple / black). */
+    void setBars(int top) {
+        runOnUiThread(() -> {
+            if (topBar != null) topBar.setBackgroundColor(top);
+            if (Build.VERSION.SDK_INT < 30) getWindow().setStatusBarColor(top);
+        });
+    }
+
+    void onBackRequest() {
+        web.evaluateJavascript("window.onBack ? window.onBack() : false", v -> {
+            if (!"true".equals(v)) finish();
+        });
+    }
+
+    /** Android 13+ back gesture (Android 16 no longer calls onBackPressed). */
+    void setupBack() {
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackRequest);
+        }
     }
 
     void askNotifications() {
@@ -199,8 +273,6 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        web.evaluateJavascript("window.onBack ? window.onBack() : false", v -> {
-            if (!"true".equals(v)) finish();
-        });
+        onBackRequest();
     }
 }

@@ -173,7 +173,23 @@ public class AlarmActivity extends Activity {
         hp.topMargin = dp(16);
         root.addView(hint, hp);
 
+        if (Build.VERSION.SDK_INT >= 30) {
+            getWindow().setDecorFitsSystemWindows(false);
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(Color.TRANSPARENT);
+            root.setOnApplyWindowInsetsListener((v, ins) -> {
+                android.graphics.Insets s = ins.getInsets(android.view.WindowInsets.Type.systemBars()
+                        | android.view.WindowInsets.Type.ime());
+                v.setPadding(dp(24) + s.left, dp(36) + s.top, dp(24) + s.right, dp(24) + s.bottom);
+                return android.view.WindowInsets.CONSUMED;
+            });
+        }
         setContentView(root);
+        if (Build.VERSION.SDK_INT >= 33) {
+            // The alarm screen can't be closed with the back gesture.
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                    android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, () -> { });
+        }
     }
 
     void updateSnooze() {

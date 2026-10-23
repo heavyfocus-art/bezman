@@ -43,7 +43,8 @@ public class Bridge {
         boolean celebrate = cel > 0 && System.currentTimeMillis() - cel < 12 * U.HOUR;
         if (cel > 0) Store.setLong(c, "celebrate", 0);
         return U.obj("items", Store.items(c), "me", me, "version", BuildConfig.VERSION_NAME,
-                "apk", APK_URL, "now", System.currentTimeMillis(), "celebrate", celebrate).toString();
+                "apk", APK_URL, "now", System.currentTimeMillis(), "celebrate", celebrate,
+                "fromPlay", fromPlay(c)).toString();
     }
 
     @JavascriptInterface
@@ -198,6 +199,40 @@ public class Bridge {
     @JavascriptInterface
     public String photo(String logId) {
         return Photos.dataUrl(c, logId);
+    }
+
+    @JavascriptInterface
+    public void setBars(String hex) {
+        try {
+            a.setBars(android.graphics.Color.parseColor(hex));
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Was this copy installed from Google Play? (then updates come from Play, not from the APK link) */
+    static boolean fromPlay(Context c) {
+        try {
+            String inst;
+            if (Build.VERSION.SDK_INT >= 30) inst = c.getPackageManager().getInstallSourceInfo(c.getPackageName()).getInstallingPackageName();
+            else inst = c.getPackageManager().getInstallerPackageName(c.getPackageName());
+            return "com.android.vending".equals(inst);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @JavascriptInterface
+    public void openUpdate() {
+        String url = fromPlay(c) ? "market://details?id=" + c.getPackageName() : APK_URL;
+        try {
+            a.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception e) {
+            try {
+                a.startActivity(new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://play.google.com/store/apps/details?id=" + c.getPackageName())));
+            } catch (Exception ignored) {
+            }
+        }
     }
 
     @JavascriptInterface
