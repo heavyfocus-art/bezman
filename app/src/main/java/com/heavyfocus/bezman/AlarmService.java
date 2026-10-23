@@ -128,7 +128,9 @@ public class AlarmService extends Service {
             if (prevVol < target) am.setStreamVolume(AudioManager.STREAM_ALARM, target, 0);
         } catch (Exception ignored) {
         }
+        String chosen = Store.getStr(this, "ringtone");
         Uri[] uris = {
+                chosen.isEmpty() ? null : Uri.parse(chosen),
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)

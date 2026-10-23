@@ -392,6 +392,14 @@ function settingsScreen() {
       ${p.samsung ? `<div class="hint">📱 <b>בסמסונג:</b> הגדרות ← סוללה ← הגבלות שימוש ברקע ← לוודא ש"בזמן" <b>לא</b> ברשימת "אפליקציות במצב שינה".</div>` : ''}
     </div>
 
+    ${child ? `<div class="sec-title"><h2>🎵 צלצול השעון המעורר</h2></div>
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px"><div class="ico alarm">🎵</div>
+        <div style="flex:1"><b>${esc(S.me.ringtone || 'צלצול ברירת המחדל של הטלפון')}</b><div class="small muted">הצלצול הנוכחי</div></div>
+        <button class="btn ghost small" data-preview="1">▶️ להשמיע</button></div>
+      <div class="actions" style="margin-top:12px"><button class="btn" data-ring="1">לבחור צלצול</button><button class="btn light" data-song="1">🎶 שיר מהטלפון</button></div>
+    </div>` : ''}
+
     ${child ? `<div class="sec-title"><h2>⏰ בדיקה</h2></div>
     <div class="card"><p class="small muted" style="margin-top:0">לוחצים, נועלים את המסך ומחכים 10 שניות. השעון צריך לצלצל ולהיפתח על כל המסך.</p>
       <button class="btn coral block" data-test="1">בדיקת שעון מעורר</button></div>` : ''}
@@ -488,6 +496,9 @@ function bindCommon() {
   document.querySelectorAll('[data-share]').forEach(b => b.onclick = shareCode);
   document.querySelectorAll('[data-fix]').forEach(b => b.onclick = () => B.fixPerm(b.dataset.fix));
   document.querySelectorAll('[data-test]').forEach(b => b.onclick = () => { B.testAlarm(); toast('השעון יצלצל בעוד 10 שניות – אפשר לנעול את המסך'); });
+  document.querySelectorAll('[data-ring]').forEach(b => b.onclick = () => B.pickRingtone && B.pickRingtone());
+  document.querySelectorAll('[data-song]').forEach(b => b.onclick = () => B.pickSong && B.pickSong());
+  document.querySelectorAll('[data-preview]').forEach(b => b.onclick = () => { if (B.previewRingtone) { B.previewRingtone(); toast('🎵 משמיע 5 שניות'); } });
   document.querySelectorAll('[data-update]').forEach(b => b.onclick = () => B.openUrl(S.apk));
   document.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => confirmBox('לצאת מהמשפחה?', 'כל הנתונים בטלפון הזה יימחקו. אפשר להצטרף שוב עם הקוד.', 'כן, לצאת', () => {
     S = JSON.parse(B.reset()); OB = { step: 1 }; TAB = 'today'; render();
@@ -578,7 +589,7 @@ function openEditor(kind, it) {
       <input class="in time" type="time" id="f-time" value="${esc(base.time || '07:00')}">
       <label class="f">באילו ימים?</label>${dayPicker(d.days)}
       <label class="f">שם (לא חובה)</label><input class="in" id="f-label" placeholder="למשל: בית ספר" value="${esc(base.label || '')}">
-      <div class="hint">🧠 כדי לכבות פותרים תרגיל חשבון קטן. נודניק אחד של 5 דקות מותר.</div>
+      <div class="hint">🧠 כדי לכבות פותרים תרגיל חשבון קטן. נודניק אחד של 5 דקות מותר.${isChild() ? `<br>🎵 צלצול: ${esc(S.me.ringtone || 'ברירת המחדל')} (משנים בהגדרות)` : ''}</div>
       <div class="actions">${del}<button class="btn" data-save="1">שמירה</button></div>`, root => {
       bindPick(root, d);
       root.querySelector('[data-save]').onclick = () => {

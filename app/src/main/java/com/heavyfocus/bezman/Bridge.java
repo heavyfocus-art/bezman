@@ -4,6 +4,7 @@ import android.app.AlarmManager;
 import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
@@ -30,7 +31,8 @@ public class Bridge {
     @JavascriptInterface
     public String state() {
         JSONObject me = U.obj("role", Store.role(c), "name", Store.name(c), "dev", Store.dev(c),
-                "code", Store.code(c), "lastSync", Store.getLong(c, "lastSync"));
+                "code", Store.code(c), "lastSync", Store.getLong(c, "lastSync"),
+                "ringtone", Store.getStr(c, "ringtoneName"));
         return U.obj("items", Store.items(c), "me", me, "version", BuildConfig.VERSION_NAME,
                 "apk", APK_URL, "now", System.currentTimeMillis()).toString();
     }
@@ -140,6 +142,55 @@ public class Bridge {
             } catch (Exception ignored) {
             }
         }
+    }
+
+    /** Opens the phone's own list of alarm sounds. */
+    @JavascriptInterface
+    public void pickRingtone() {
+        String cur = Store.getStr(c, "ringtone");
+        Intent i = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
+                .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM | RingtoneManager.TYPE_RINGTONE)
+                .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "צלצול לשעון המעורר")
+                .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                .putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
+                        cur.isEmpty() ? RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM) : Uri.parse(cur));
+        a.runOnUiThread(() -> {
+            try {
+                a.startActivityForResult(i, MainActivity.REQ_RINGTONE);
+            } catch (Exception e) {
+                toast("לא נמצאה רשימת צלצולים בטלפון");
+            }
+        });
+    }
+
+    /** Lets her choose any song / sound file from the phone. */
+    @JavascriptInterface
+    public void pickSong() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/*");
+        a.runOnUiThread(() -> {
+            try {
+                a.startActivityForResult(i, MainActivity.REQ_SONG);
+            } catch (Exception e) {
+                toast("לא ניתן לפתוח את הקבצים");
+            }
+        });
+    }
+
+    /** Plays the chosen sound for 5 seconds. */
+    @JavascriptInterface
+    public void previewRingtone() {
+        a.runOnUiThread(() -> {
+            try {
+                String cur = Store.getStr(c, "ringtone");
+                Uri u = cur.isEmpty() ? RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM) : Uri.parse(cur);
+                final android.media.Ringtone r = RingtoneManager.getRingtone(c, u);
+                if (r == null) return;
+                r.play();
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(r::stop, 5000);
+            } catch (Exception ignored) {
+            }
+        });
     }
 
     @JavascriptInterface

@@ -128,6 +128,15 @@ public class AlarmActivity extends Activity {
         input.setTextSize(30);
         input.setGravity(Gravity.CENTER);
         input.setHint("?");
+        input.setTextColor(Color.BLACK);
+        input.setHintTextColor(0xFF9A96B2);
+        input.setTypeface(Typeface.DEFAULT_BOLD);
+        GradientDrawable ib = new GradientDrawable();
+        ib.setColor(0xFFF4F1FF);
+        ib.setStroke(dp(2), 0xFF6C4BF5);
+        ib.setCornerRadius(dp(14));
+        input.setBackground(ib);
+        input.setPadding(dp(12), dp(10), dp(12), dp(10));
         input.setImeOptions(EditorInfo.IME_ACTION_DONE);
         input.setOnEditorActionListener((v, actionId, ev) -> {
             check();
