@@ -228,6 +228,29 @@ public class Bridge {
         Pin.lock(c);
     }
 
+    // ---------- personal design (this phone only) ----------
+    @JavascriptInterface
+    public String getPrefs() {
+        return Store.getStr(c, "uiPrefs");
+    }
+
+    @JavascriptInterface
+    public void setPrefs(String json) {
+        Store.setStr(c, "uiPrefs", json == null ? "" : json);
+    }
+
+    @JavascriptInterface
+    public void setTextZoom(int z) {
+        final int zz = Math.max(70, Math.min(160, z));
+        a.runOnUiThread(() -> a.web.getSettings().setTextZoom(zz));
+    }
+
+    // ---------- microphone ----------
+    @JavascriptInterface
+    public void voice() {
+        a.runOnUiThread(a::startVoice);
+    }
+
     @JavascriptInterface
     public void setBars(String hex) {
         try {

@@ -98,9 +98,13 @@ public class AlarmActivity extends Activity {
         root.setGravity(Gravity.CENTER_HORIZONTAL);
         root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         root.setPadding(dp(24), dp(48), dp(24), dp(24));
-        yb = "yb".equals(Store.myTheme(this));
+        String theme = Store.myTheme(this);
+        yb = "yb".equals(theme);
+        boolean orange = "orange".equals(theme);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                yb ? new int[]{0xFF000000, 0xFF161616, 0xFF3D3300} : new int[]{0xFF2B2160, 0xFF6C4BF5, 0xFFFF7A59});
+                yb ? new int[]{0xFF000000, 0xFF161616, 0xFF3D3300}
+                        : orange ? new int[]{0xFF7A2E00, 0xFFE2650F, 0xFFFFB347}
+                        : new int[]{0xFF2B2160, 0xFF6C4BF5, 0xFFFF7A59});
         root.setBackground(bg);
 
         clock = text("", 64, Color.WHITE, true);

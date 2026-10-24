@@ -208,7 +208,7 @@ public final class Store {
         if ("child".equals(role)) {
             U.put(m, "kid", kidId(name));
             U.put(m, "gender", "m".equals(gender) ? "m" : "f");
-            U.put(m, "theme", "yb".equals(theme) ? "yb" : "purple");
+            U.put(m, "theme", okTheme(theme));
             U.put(m, "since", old != null && old.has("since") ? old.optLong("since") : System.currentTimeMillis());
         }
         upsertLocal(c, m);
@@ -219,7 +219,7 @@ public final class Store {
         JSONObject m = items(c).optJSONObject("m_" + dev(c));
         if (m == null) return;
         if (gender != null && !gender.isEmpty()) U.put(m, "gender", "m".equals(gender) ? "m" : "f");
-        if (theme != null && !theme.isEmpty()) U.put(m, "theme", "yb".equals(theme) ? "yb" : "purple");
+        if (theme != null && !theme.isEmpty()) U.put(m, "theme", okTheme(theme));
         if (!m.has("kid")) U.put(m, "kid", kidId(m.optString("name")));
         if (!m.has("since")) U.put(m, "since", 1);
         upsertLocal(c, m);
@@ -292,9 +292,18 @@ public final class Store {
         return m != null && "m".equals(m.optString("gender"));
     }
 
+    static String okTheme(String t) {
+        return "yb".equals(t) || "orange".equals(t) ? t : "purple";
+    }
+
+    /** My colors: what I chose, unless a parent chose newer colors for me ("kt:<kid>"). */
     public static String myTheme(Context c) {
-        JSONObject m = items(c).optJSONObject("m_" + dev(c));
-        return m == null ? "purple" : m.optString("theme", "purple");
+        JSONObject all = items(c);
+        JSONObject m = all.optJSONObject("m_" + dev(c));
+        String t = m == null ? "purple" : m.optString("theme", "purple");
+        JSONObject kt = all.optJSONObject("kt:" + myKid(c));
+        if (U.alive(kt) && (m == null || kt.optLong("upd") > m.optLong("upd"))) t = kt.optString("theme", t);
+        return okTheme(t);
     }
 
     /** Is this item for me (on a child's phone)? */

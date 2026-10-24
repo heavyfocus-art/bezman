@@ -52,6 +52,10 @@ function kids() {
       if ((m.upd || 0) > cur.upd) Object.assign(cur, { name: m.name, gender: m.gender || 'f', theme: m.theme || 'purple', upd: m.upd || 0 });
     }
   });
+  Object.values(by).forEach(k => {
+    const kt = item('kt:' + k.kid);
+    if (kt && kt.theme && (kt.upd || 0) > k.upd) k.theme = kt.theme;
+  });
   return Object.values(by).sort((a, b) => a.since - b.since);
 }
 const legacyKid = () => { const k = kids(); return k.length ? k[0].kid : null; };
@@ -373,28 +377,28 @@ function render() {
     app.innerHTML = lockScreen(); bindLock(); return;
   }
   pickKid();
-  document.body.dataset.theme = kidInfo().theme === 'yb' ? 'yb' : 'purple';
+  const th = kidInfo().theme;
+  document.body.dataset.theme = th === 'yb' || th === 'orange' ? th : 'purple';
+  applyDesign();
   bars();
+  if (TAB === 'report' && isChild()) TAB = 'today';
   let body = '';
   if (TAB === 'today') body = isChild() ? childToday() : parentToday();
   else if (TAB === 'plan') body = planScreen();
+  else if (TAB === 'report') body = reportScreen();
   else if (TAB === 'rewards') body = rewardsScreen();
   else body = settingsScreen();
   const pending = list('redeem').filter(r => r.status === 'pending').length;
-  app.innerHTML = body + `
-  <nav>
-    ${navBtn('today', '🏠', 'היום', !isChild() ? pendingTasks(true).length : 0)}
-    ${navBtn('plan', '🗓️', 'לו״ז')}
-    ${navBtn('rewards', '🎁', 'פרסים', !isChild() && pending ? pending : 0)}
-    ${navBtn('settings', '⚙️', 'הגדרות')}
-  </nav>`;
+  const badge = { today: !isChild() ? pendingTasks(true).length : 0, rewards: !isChild() && pending ? pending : 0 };
+  app.innerHTML = body + (TAB === 'today' || TAB === 'plan' ? micFab() : '') + `
+  <nav>${tabOrder().map(k => navBtn(k, TABS_ALL[k][0], TABS_ALL[k][1], badge[k] || 0)).join('')}</nav>`;
   bindCommon();
   fillPhotos();
   if (TAB === 'today') tickTimer = setInterval(() => { if (!MODAL && TAB === 'today') render(); }, 30000);
 }
 let lastBars = '';
 function bars() {
-  const c = document.body.dataset.theme === 'yb' ? '#000000' : '#2b2160';
+  const c = document.body.dataset.theme === 'orange' ? '#7a2e00' : heroColor();
   if (c !== lastBars && B.setBars) { lastBars = c; B.setBars(c); }
 }
 function navBtn(id, ico, txt, badge) {
@@ -419,7 +423,7 @@ function hero(title, sub) {
   const ls = S.me.lastSync ? Math.round((Date.now() - S.me.lastSync) / 60000) : null;
   return `<div class="hero">
     <div class="top"><div><h1>${title}</h1><div class="date">${sub}</div></div>
-    <button class="sync" data-sync="1">🔄 ${ls == null ? 'סנכרון' : ls < 1 ? 'עכשיו' : 'לפני ' + ls + ' דק׳'}</button></div>
+    <div style="display:flex;gap:6px">${!isChild() ? '<button class="sync" data-design="1" aria-label="עיצוב">🎨</button>' : ''}<button class="sync" data-sync="1">🔄 ${ls == null ? 'סנכרון' : ls < 1 ? 'עכשיו' : 'לפני ' + ls + ' דק׳'}</button></div></div>
     <div class="chips">
       <div class="chip"><b>\u200E${sc.pts}</b><span>⭐ נקודות</span></div>
       <div class="chip"><b>${sc.streak}</b><span>🔥 ימים ברצף</span></div>
@@ -495,13 +499,16 @@ function parentToday() {
     ${permBanner()}
     ${!S.me.pinSet ? `<div class="banner" style="background:var(--sun-soft);color:#6b4b00"><div style="flex:1">🔒 כדאי לקבוע קוד הורים – כדי שאף ילד לא יוכל להתחבר כהורה ולאשר לעצמו משימות</div><button class="btn small" data-setpin="1">לקבוע</button></div>` : ''}
     ${!joined ? `<div class="card"><b>📲 אף ילד עוד לא מחובר</b><p class="muted small">מתקינים את האפליקציה בטלפון של הילד/ה, בוחרים "אני ילד/ה" ומקלידים את קוד המשפחה.</p><button class="btn block" data-share="1">שליחת הקוד בוואטסאפ</button></div>` : ''}
-    ${approvalsCard()}
-    ${pending.map(redeemCard).join('')}
-    <div class="sec-title"><h2>מה קרה היום</h2><button class="add" data-new="task">+ משימה</button></div>
-    <div class="card">${rows.length ? rows.map(r => rowHtml(r, false, now)).join('') : `<div class="empty"><div class="e">🗓️</div>אין כלום בלו״ז להיום.<br>מוסיפים בלשונית "לו״ז"</div>`}</div>
-    ${gifts}
-    ${weekCard()}
-    ${tomorrowCard(false)}
+    ${parentSections({
+      approvals: approvalsCard(),
+      redeems: pending.map(redeemCard).join(''),
+      stats: joined ? statsMini() : '',
+      today: `<div class="sec-title"><h2>מה קרה היום</h2><button class="add" data-new="task">+ משימה</button></div>
+    <div class="card">${rows.length ? rows.map(r => rowHtml(r, false, now)).join('') : `<div class="empty"><div class="e">🗓️</div>אין כלום בלו״ז להיום.<br>מוסיפים בלשונית "לו״ז" או ב-🎤</div>`}</div>`,
+      gift: `<div style="margin-top:12px">${gifts}</div>`,
+      week: weekCard(),
+      tomorrow: tomorrowCard(false),
+    })}
     <p class="muted small center">${S.me.live ? '⚡ עדכונים מיידיים פועלים' : 'העדכונים מהטלפון ' + G('שלה', 'שלו') + ' מגיעים בדרך כלל תוך כרבע שעה'}</p>
   </main>`;
 }
@@ -616,10 +623,15 @@ function settingsScreen() {
 
     ${child ? `<div class="sec-title"><h2>🎨 הצבעים שלי</h2></div>
     <div class="card">
-      <div class="theme-pick"><button class="tp-purple ${kidInfo().theme !== 'yb' ? 'on' : ''}" data-settheme="purple">סגול 💜</button><button class="tp-yb ${kidInfo().theme === 'yb' ? 'on' : ''}" data-settheme="yb">צהוב-שחור 💛🖤</button></div>
+      <div class="theme-pick">${themeButtons(kidInfo().theme, t => `data-settheme="${t}"`)}</div>
       <label class="f">אני</label>
       <div class="seg"><button class="${kidInfo().gender !== 'm' ? 'on' : ''}" data-setgender="f">בת 👧</button><button class="${kidInfo().gender === 'm' ? 'on' : ''}" data-setgender="m">בן 👦</button></div>
-    </div>` : `<div class="card small"><b>👦👧 ילד נוסף?</b><div class="muted">מתקינים אצלו את האפליקציה, בוחרים "אני ילד/ה" ומקלידים את אותו קוד משפחה. כל ילד מקבל לו״ז, נקודות ופרסים משלו, ולמעלה מופיעים כפתורים למעבר בין הילדים.</div></div>`}
+    </div>` : `<div class="sec-title"><h2>🎨 עיצוב</h2></div>
+    <div class="card"><button class="btn block" data-design="1">🎨 עיצוב אישי של המסך שלי</button>
+      ${kids().map(k => `<label class="f">הצבעים של ${esc(k.name)}</label><div class="theme-pick">${themeButtons(k.theme, t => `data-kidtheme="${esc(k.kid)}|${t}"`)}</div>`).join('')}
+      ${kids().length ? '<div class="small muted" style="margin-top:8px">הצבעים של הילד/ה מתעדכנים גם בטלפון שלו/ה</div>' : ''}
+    </div>
+    <div class="card small"><b>👦👧 ילד נוסף?</b><div class="muted">מתקינים אצלו את האפליקציה, בוחרים "אני ילד/ה" ומקלידים את אותו קוד משפחה. כל ילד מקבל לו״ז, נקודות ופרסים משלו, ולמעלה מופיעים כפתורים למעבר בין הילדים.</div></div>`}
 
     ${child ? `<div class="sec-title"><h2>🎵 צלצול השעון המעורר</h2></div>
     <div class="card">
@@ -650,6 +662,11 @@ function settingsScreen() {
 
     <div class="card small muted center">בזמן · גרסה ${esc(S.version)}<br><button class="btn danger small" style="margin-top:10px" data-reset="1">יציאה מהמשפחה והתחלה מחדש</button></div>
   </main>`;
+}
+
+function themeButtons(cur, attr) {
+  const T = [['purple', 'סגול 💜'], ['orange', 'כתום 🧡'], ['yb', 'צהוב-שחור 💛🖤']];
+  return T.map(([t, n]) => `<button class="tp-${t} ${((cur || 'purple') === t) ? 'on' : ''}" ${attr(t)}>${n}</button>`).join('');
 }
 
 // ---------- parents' PIN ----------
@@ -717,7 +734,7 @@ function onboarding() {
       ${parent ? '' : `<label class="f">אני</label>
       <div class="seg"><button class="${OB.gender !== 'm' ? 'on' : ''}" data-gender="f">בת 👧</button><button class="${OB.gender === 'm' ? 'on' : ''}" data-gender="m">בן 👦</button></div>
       <label class="f">הצבעים שלי</label>
-      <div class="theme-pick"><button class="tp-purple ${OB.theme !== 'yb' ? 'on' : ''}" data-obtheme="purple">סגול 💜</button><button class="tp-yb ${OB.theme === 'yb' ? 'on' : ''}" data-obtheme="yb">צהוב-שחור 💛🖤</button></div>`}
+      <div class="theme-pick">${themeButtons(OB.theme, t => `data-obtheme="${t}"`)}</div>`}
       <label class="f">משפחה</label>
       <div class="seg"><button class="${mode === 'new' ? 'on' : ''}" data-mode="new">משפחה חדשה</button><button class="${mode === 'join' ? 'on' : ''}" data-mode="join">יש לי קוד</button></div>
       ${mode === 'join' ? `<label class="f">קוד המשפחה</label><input class="in" id="ob-code" dir="ltr" style="text-align:center;letter-spacing:2px;font-weight:800" placeholder="XXXXX-XXXXX" value="${esc(OB.code || '')}">
@@ -757,6 +774,14 @@ const val = sel => { const e = $(sel); return e ? e.value : ''; };
 
 // ---------- events ----------
 function bindCommon() {
+  document.querySelectorAll('[data-design]').forEach(b => b.onclick = openDesign);
+  document.querySelectorAll('[data-mic]').forEach(b => b.onclick = () => startVoice('new'));
+  document.querySelectorAll('[data-rep]').forEach(b => b.onclick = () => { REP = b.dataset.rep; render(); });
+  document.querySelectorAll('[data-kidtheme]').forEach(b => b.onclick = () => {
+    const [kid, theme] = b.dataset.kidtheme.split('|');
+    save({ id: 'kt:' + kid, kind: 'config', kid, theme });
+    toast('הצבעים עודכנו 🎨');
+  });
   document.querySelectorAll('[data-kid]').forEach(b => b.onclick = () => {
     KID = b.dataset.kid;
     try { localStorage.setItem('bz-kid', KID); } catch (e) {}
@@ -887,6 +912,7 @@ function openModal(html, bind) {
   root.innerHTML = `<div class="sheet-bg"><div class="sheet"><div class="grab"></div>${html}</div></div>`;
   root.querySelector('.sheet-bg').onclick = (e) => { if (e.target.classList.contains('sheet-bg')) closeModal(); };
   bind(root);
+  root.querySelectorAll('[data-micin]').forEach(b => b.onclick = () => startVoice('title'));
 }
 function closeModal() {
   MODAL = null;
@@ -947,9 +973,9 @@ function readWhen(root, draft, out) {
   return true;
 }
 
-function openEditor(kind, it) {
+function openEditor(kind, it, pre) {
   const isNew = !it;
-  const base = it ? JSON.parse(JSON.stringify(it)) : {};
+  const base = it ? JSON.parse(JSON.stringify(it)) : (pre ? JSON.parse(JSON.stringify(pre)) : {});
   if (kind === 'task' && isChild() && !isNew && it.by && it.by !== S.me.name) {
     toast('את המשימה הזו קבעו ההורים – רק הם יכולים לשנות אותה');
     return;
@@ -984,7 +1010,7 @@ function openEditor(kind, it) {
     const d = { mode: base.date ? 'once' : 'repeat', days: base.days ? base.days.slice() : [], date: base.date || today,
       travel: base.travel != null ? base.travel : 15, prep: base.prep != null ? base.prep : 20 };
     openModal(`<h3>${isNew ? 'חוג / יציאה חדשה' : 'עריכה'}</h3>
-      <label class="f" style="margin-top:0">מה?</label><input class="in" id="f-title" placeholder="למשל: חוג ריקוד" value="${esc(base.title || '')}">
+      <label class="f" style="margin-top:0">מה?</label><div class="titlewrap"><input class="in" id="f-title" placeholder="למשל: חוג ריקוד" value="${esc(base.title || '')}"><button type="button" class="mic-in" data-micin="1">🎤</button></div>
       ${whenFields(d)}
       <label class="f">שעת התחלה</label><input class="in time" type="time" id="f-start" value="${esc(base.start || '16:30')}">
       <label class="f">כמה זמן הדרך?</label>${opts('travel', [0, 5, 10, 15, 20, 30, 45, 60], d.travel, v => v + ' דק׳')}
@@ -1022,7 +1048,7 @@ function openEditor(kind, it) {
   if (kind === 'task') {
     const d = { mode: (base.days && base.days.length) ? 'repeat' : 'once', days: base.days ? base.days.slice() : [], date: base.date || today, pts: base.pts || 5, photo: base.photo ? 1 : 0 };
     openModal(`<h3>${isNew ? 'משימה חדשה' : 'עריכת משימה'}</h3>
-      <label class="f" style="margin-top:0">מה צריך לעשות?</label><input class="in" id="f-title" placeholder="למשל: שיעורי בית במתמטיקה" value="${esc(base.title || '')}">
+      <label class="f" style="margin-top:0">מה צריך לעשות?</label><div class="titlewrap"><input class="in" id="f-title" placeholder="למשל: שיעורי בית במתמטיקה" value="${esc(base.title || '')}"><button type="button" class="mic-in" data-micin="1">🎤</button></div>
       ${whenFields(d)}
       <label class="f">עד איזו שעה?</label><input class="in time" type="time" id="f-time" value="${esc(base.time || '20:00')}">
       ${isChild() ? `<div class="hint">⭐ ${isNew ? 'המשימה תהיה שווה' : 'המשימה שווה'} ${d.pts} נקודות. את הנקודות קובעים ההורים.</div>`

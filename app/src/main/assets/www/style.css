@@ -249,3 +249,72 @@ body[data-theme="yb"] .kidtabs button.on { background: #ffd200; color: #111; }
 .theme-pick button.on { border-color: var(--ink); }
 .tp-purple { background: linear-gradient(135deg, #2b2160, #6c4bf5); color: #fff; }
 .tp-yb { background: repeating-linear-gradient(135deg, #111 0 14px, #222 14px 28px); color: #ffd200; }
+
+/* ---------- orange theme (kids) ---------- */
+body[data-theme="orange"] {
+  --violet: #f07a1a;
+  --violet-soft: #ffecd9;
+  --on-acc: #ffffff;
+  --acc-text: #b95807;
+  --acc-shadow: #c25c0b;
+  --acc-2: #ffb36b;
+  --coral: #e2435b;
+  --coral-soft: #ffe3e8;
+  --bg: #fff6ee;
+  --line: #f6e3d2;
+  --hero: linear-gradient(160deg, #7a2e00 0%, #d9580b 55%, #ff9a3d 100%);
+  --hero-glow: rgba(255,230,120,.5);
+  --ob: linear-gradient(170deg, #7a2e00 0%, #e2650f 55%, #ffc15e 120%);
+}
+body[data-theme="orange"] .kidtabs button.on { color: #b95807; }
+.tp-orange { background: linear-gradient(135deg, #d9580b, #ff9a3d); color: #fff; }
+
+/* ---------- design sheet ---------- */
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.sw { width: 64px; height: 64px; border-radius: 16px; border: 3px solid var(--line); position: relative; display: flex; align-items: flex-end; justify-content: center; padding: 0 0 4px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.sw span { font-size: 10.5px; font-weight: 700; background: rgba(255,255,255,.9); color: #222; border-radius: 6px; padding: 0 4px; }
+.sw.on { border-color: var(--ink); transform: scale(1.06); }
+.sw.on::after { content: "✓"; position: absolute; top: 4px; left: 6px; background: var(--ink); color: #fff; border-radius: 50%; width: 18px; height: 18px; font-size: 12px; display: grid; place-items: center; }
+.orderlist { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.ordrow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: #fff; }
+.ordrow:last-child { border-bottom: 0; }
+.ordrow .on { flex: 1; font-weight: 700; }
+.ordrow.hid .on { opacity: .4; text-decoration: line-through; }
+.ordrow .mv, .ordrow .eye { width: 38px; height: 38px; border-radius: 10px; background: #f1eff8; font-size: 16px; }
+.ordrow .mv:disabled { opacity: .3; }
+
+/* ---------- mic ---------- */
+.mic-fab { position: fixed; left: 16px; bottom: calc(84px + env(safe-area-inset-bottom)); width: 58px; height: 58px; border-radius: 50%;
+  background: var(--violet); color: var(--on-acc); font-size: 26px; box-shadow: 0 6px 18px rgba(0,0,0,.25); z-index: 11; }
+.mic-fab:active { transform: scale(.94); }
+.titlewrap { display: flex; gap: 8px; }
+.titlewrap .in { flex: 1; }
+.mic-in { width: 52px; border-radius: 14px; background: var(--violet-soft); font-size: 22px; flex: none; }
+
+/* ---------- report ---------- */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tiles.mini4 { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.tiles.mini { gap: 8px; }
+.tile { background: #fff; border-radius: 16px; padding: 12px; box-shadow: 0 2px 0 var(--line); }
+.card .tile { background: var(--bg); box-shadow: none; }
+.tile b { display: block; font-size: 24px; font-weight: 800; line-height: 1.15; }
+.tile span { font-size: 12.5px; color: var(--ink2); }
+.tiles.mini4 .tile { padding: 10px 6px; text-align: center; }
+.tiles.mini4 .tile b { font-size: 19px; }
+.tile.good b { color: #11784f; }
+.tile.bad b { color: var(--red); }
+.tile.big { background: var(--violet-soft); }
+.tile.big b { color: var(--acc-text); }
+.ring { width: 96px; height: 96px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.ring > div { width: 74px; height: 74px; border-radius: 50%; background: #fff; display: grid; place-items: center; align-content: center; text-align: center; }
+.ring b { font-size: 20px; font-weight: 800; }
+.ring span { font-size: 11px; color: var(--ink2); }
+.week.rep { height: 130px; gap: 3px; }
+.week.rep .d { font-size: 10px; }
+.week.rep .n { font-size: 10px; }
+.week .b.neg { background: linear-gradient(180deg, var(--red), #ff9a9d); }
+table.cmp { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.cmp th { font-size: 12px; color: var(--ink2); font-weight: 700; padding: 6px 4px; text-align: center; }
+table.cmp td { padding: 10px 4px; text-align: center; border-top: 1px solid var(--line); font-weight: 700; }
+table.cmp td:first-child { text-align: right; }
+table.cmp tr.me td { background: var(--violet-soft); }

@@ -145,7 +145,28 @@ public class MainActivity extends Activity {
         if (current.get() == this) current = new WeakReference<>(null);
     }
 
-    static final int REQ_RINGTONE = 11, REQ_SONG = 12, REQ_PHOTO = 13;
+    static final int REQ_RINGTONE = 11, REQ_SONG = 12, REQ_PHOTO = 13, REQ_VOICE = 14;
+
+    /** Google's speech dialog in Hebrew – no microphone permission needed by the app. */
+    void startVoice() {
+        Intent i = new Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "he-IL")
+                .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "he-IL")
+                .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "מה להוסיף? למשל: לסדר את החדר מחר עד 8 בערב")
+                .putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1);
+        try {
+            startActivityForResult(i, REQ_VOICE);
+        } catch (Exception e) {
+            sendVoice("", "בטלפון הזה אין זיהוי דיבור. אפשר להתקין את אפליקציית Google מהחנות");
+        }
+    }
+
+    void sendVoice(String text, String err) {
+        String js = "window.onVoice && window.onVoice(" + org.json.JSONObject.quote(text == null ? "" : text)
+                + "," + (err == null ? "null" : org.json.JSONObject.quote(err)) + ")";
+        runOnUiThread(() -> web.evaluateJavascript(js, null));
+    }
     String photoTask = "", photoOcc = "";
     Uri cameraUri = null;
 
@@ -220,6 +241,15 @@ public class MainActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_PHOTO) {
             onPhoto(resultCode, data);
+            return;
+        }
+        if (requestCode == REQ_VOICE) {
+            String text = "";
+            if (resultCode == RESULT_OK && data != null) {
+                java.util.ArrayList<String> r = data.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS);
+                if (r != null && !r.isEmpty()) text = r.get(0);
+            }
+            if (resultCode == RESULT_OK) sendVoice(text, null);
             return;
         }
         if (resultCode != RESULT_OK || data == null) return;
