@@ -559,5 +559,6 @@ public final class Store {
         Sched.reschedule(c);
         Sync.flushAsync(c);
         MainActivity.refreshUi();
+        Widgets.updateAll(c);
     }
 }

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">בזמן</string>
+    <string name="wg_next">בזמן – הדבר הבא</string>
+    <string name="wg_next_desc">ספירה לאחור לדבר הבא, עם כפתור יצאתי / בוצע. אצל ההורים: מצב של כל ילד</string>
+    <string name="wg_day">בזמן – היום</string>
+    <string name="wg_day_desc">כל מה שיש היום: שעון, חוגים ומשימות. אצל ההורים: מחולק לפי ילד</string>
 </resources>

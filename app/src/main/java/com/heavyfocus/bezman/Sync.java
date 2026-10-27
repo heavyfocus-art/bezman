@@ -291,6 +291,7 @@ public final class Sync {
         flush(c);
         Store.setLong(c, "lastSync", System.currentTimeMillis());
         MainActivity.refreshUi();
+        Widgets.updateAll(c);
     }
 
     public static void syncAsync(Context c) {

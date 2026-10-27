@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A child's name line: in the parent's "היום" list and in the parent's "הדבר הבא". -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="6dp"
+    android:gravity="center_vertical"
+    android:layoutDirection="rtl"
+    android:orientation="horizontal">
+
+    <TextView
+        android:id="@+id/kname"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="● סופיה"
+        android:textColor="#FF8B6CF6"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/kinfo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:gravity="start"
+        android:maxLines="2"
+        android:text="⭐ 120 · ✓ 2/4 · ⏳ 1"
+        android:textColor="#FF5A5577"
+        android:textSize="13sp" />
+</LinearLayout>

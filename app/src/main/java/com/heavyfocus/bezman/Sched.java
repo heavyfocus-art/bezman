@@ -227,6 +227,7 @@ public final class Sched {
             }
         }
         reschedule(c);
+        Widgets.updateAll(c);
     }
 
     static void handle(Context c, T t) {

@@ -51,6 +51,7 @@ public class AlarmReceiver extends BroadcastReceiver {
                     Sched.reschedule(c);
                     SyncJob.schedule(c);
                     LiveService.start(c);
+                    Widgets.updateAll(c);
                 }
             } catch (Exception ignored) {
             } finally {
