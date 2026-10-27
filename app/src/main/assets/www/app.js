@@ -241,7 +241,10 @@ function agenda(d, kid, withOff) {
   const rows = [];
   const of = kind => list(kind).filter(i => kidOf(i) === kid && occursOn(i, d) && (withOff || !offOn(i.id, occ)));
   of('alarm').filter(a => a.on !== false && mins(a.time) >= 0).forEach(a => {
-    rows.push({ type: 'alarm', t: at(occ, mins(a.time)), it: a, occ, off: offOn(a.id, occ), rang: item(`rang:${a.id}:${occ}`),
+    const t = at(occ, mins(a.time));
+    // a ring from before the alarm was moved to a later time does not count for the new time
+    const rang = item(`rang:${a.id}:${occ}`);
+    rows.push({ type: 'alarm', t, it: a, occ, off: offOn(a.id, occ), rang: rang && rang.at >= t - 60000 ? rang : null,
       log: item(`woke:${a.id}:${occ}`), miss: item(`wakemiss:${a.id}:${occ}`), snooze: item(`snooze:${a.id}:${occ}`) });
   });
   of('event').filter(e => mins(e.start) >= 0).forEach(e => {
@@ -265,13 +268,26 @@ function alarmNote(r, now) {
   return '';
 }
 
+/**
+ * Parents: did the alarm (with this time) really arrive on the child's phone?
+ * The child's phone reports the next alarm it set as item "sched:<kid>".
+ */
+function phoneNote(r, now) {
+  const sc = item(`sched:${kidOf(r.it)}`);
+  if (!sc || r.t > now + 3 * 86400000) return '';
+  if (sc.alarm === r.it.id && Math.abs(sc.at - r.t) < 60000) return ` <span class="pill ok">✓ נקבע בטלפון</span>`;
+  // the phone has a later alarm (or none) set first: this one did not reach it yet
+  if (!sc.at || sc.at < now || r.t < sc.at - 60000) return ` <span class="pill warn">⏳ עוד לא הגיע לטלפון</span>`;
+  return '';
+}
+
 function rowHtml(r, child, now) {
   const it = r.it;
   if (r.type === 'alarm') {
     let st;
     if (r.log) st = `<span class="pill ok">${child ? 'קמת' : G('קמה', 'קם')} ב-${tHM(r.log.at)} · \u200E+${r.log.pts}⭐</span>`;
     else if (r.miss) st = `<span class="pill warn">⚠️ השעון לא כובה בזמן</span>`;
-    else if (now < r.t) st = `<span class="pill wait">מתוכנן</span>`;
+    else if (now < r.t) st = `<span class="pill wait">מתוכנן</span>` + (child ? '' : phoneNote(r, now));
     else st = child ? `<span class="pill sun">מצלצל…</span>` : (alarmNote(r, now) || `<span class="pill sun">מצלצל…</span>`);
     return `<div class="row ${r.log ? 'done' : ''}">
       <div class="ico ${r.log ? 'ok' : 'alarm'}">${r.log ? '☀️' : '⏰'}</div>

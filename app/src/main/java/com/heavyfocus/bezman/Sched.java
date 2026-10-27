@@ -153,22 +153,31 @@ public final class Sched {
         return PendingIntent.getBroadcast(c, 100, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
-    /** True only for the first caller for this alarm on this day (so it never rings twice). */
-    static boolean claim(Context c, String id, String occ) {
-        return Store.markNotified(c, "ring:" + id + ":" + occ);
+    /**
+     * True only for the first caller for this alarm on this day at this time (so it never rings twice).
+     * The time is part of the key: if a parent moves the alarm to a later time the same day, it rings again.
+     */
+    static boolean claim(Context c, String id, String occ, long at) {
+        return Store.markNotified(c, ringKey(id, occ, at));
     }
 
-    static boolean rung(Context c, String id, String occ) {
-        return Store.wasNotified(c, "ring:" + id + ":" + occ);
+    static boolean rung(Context c, String id, String occ, long at) {
+        return Store.wasNotified(c, ringKey(id, occ, at));
+    }
+
+    static String ringKey(String id, String occ, long at) {
+        return "ring:" + id + ":" + occ + ":" + U.hhmm(at);
     }
 
     /** Is this alarm still wanted on that day (not deleted, not switched off, not off for the day)? */
-    static boolean stillDue(Context c, String id, String occ) {
+    static boolean stillDue(Context c, String id, String occ, long at) {
         JSONObject all = Store.items(c);
         JSONObject a = all.optJSONObject(id);
         if (!U.alive(a) || !a.optBoolean("on", true) || U.isOff(all, id, occ)) return false;
         java.util.Calendar d = U.dayOf(occ);
         if (d == null || !U.occursOn(a, d)) return false;
+        // the time was changed after this wake-up was set: the new time has its own wake-up
+        if (at > 0 && Math.abs(U.at(d, U.mins(a.optString("time"))) - at) > U.MIN) return false;
         return Store.kidOf(a, Store.legacyKid(all)).equals(Store.myKid(c));
     }
 
@@ -181,20 +190,39 @@ public final class Sched {
         }
     }
 
+    /** Wakes the child's phone every 15 minutes to fetch changes (and to bring the live connection back). */
+    static PendingIntent syncPi(Context c) {
+        Intent i = new Intent(c, AlarmReceiver.class).setAction(AlarmReceiver.SYNC);
+        return PendingIntent.getBroadcast(c, 104, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    static final long SYNC_EVERY = 15 * U.MIN;
+
     public static synchronized void reschedule(Context c) {
         AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
         PendingIntent piR = firePi(c, 101);
         am.cancel(firePi(c, 100)); // older versions woke the wake-up alarm through FIRE
         am.cancel(ringPi(c, null));
         am.cancel(piR);
-        if (!Store.isChild(c)) return;
+        if (!Store.isChild(c) || Store.code(c).isEmpty()) {
+            am.cancel(syncPi(c));
+            return;
+        }
+        // keep one sync wake-up pending (not pushed back every time something changes)
+        long nextSync = Store.getLong(c, "nextSyncAt");
+        long nowS = System.currentTimeMillis();
+        if (nextSync < nowS || nextSync > nowS + SYNC_EVERY) {
+            nextSync = nowS + SYNC_EVERY;
+            Store.setLong(c, "nextSyncAt", nextSync);
+            setExact(c, nextSync, syncPi(c));
+        }
         long now = System.currentTimeMillis();
         long floor = Math.max(Store.getLong(c, "lastProc"), now - U.MIN);
         if (floor > now + 2 * U.MIN) floor = now - U.MIN; // clock went back
         T nextA = null, nextR = null;
         // Alarms: the next one that did not ring yet (independent of the reminders' progress).
         for (T t : compute(c, now - U.MIN, now + 3 * U.DAY)) {
-            if (ALARM.equals(t.type) && !rung(c, t.id, t.occ)) {
+            if (ALARM.equals(t.type) && !rung(c, t.id, t.occ, t.time)) {
                 nextA = t;
                 break;
             }
@@ -207,6 +235,26 @@ public final class Sched {
         }
         if (nextA != null) setClock(c, nextA.time, ringPi(c, nextA));
         if (nextR != null) setExact(c, nextR.time, piR);
+        report(c, nextA);
+    }
+
+    /**
+     * Tells the parents which wake-up alarm is really set on this phone (item "sched:<kid>"),
+     * so they can see that a change they made has arrived. Sent only when it changes.
+     */
+    static void report(Context c, T nextA) {
+        try {
+            String kid = Store.myKid(c);
+            String id = "sched:" + kid;
+            String alarm = nextA == null ? "" : nextA.id;
+            long at = nextA == null ? 0 : nextA.time;
+            JSONObject old = Store.get(c, id);
+            if (old != null && alarm.equals(old.optString("alarm")) && old.optLong("at") == at) return;
+            Store.upsertLocal(c, U.obj("id", id, "kind", "sched", "kid", kid, "alarm", alarm, "at", at,
+                    "set", System.currentTimeMillis()));
+            Sync.flushAsync(c);
+        } catch (Exception ignored) {
+        }
     }
 
     /** Called when Android wakes us: handle everything that is due now. */
@@ -234,7 +282,7 @@ public final class Sched {
         JSONObject all = Store.items(c);
         switch (t.type) {
             case ALARM:
-                if (claim(c, t.id, t.occ)) ring(c, t.id, t.occ, t.title);
+                if (claim(c, t.id, t.occ, t.time)) ring(c, t.id, t.occ, t.title);
                 break;
             case WAKE_CHECK:
                 if (!Store.has(all, "woke:" + t.id + ":" + t.occ)) Store.wakeMissed(c, t.id, t.occ, t.title);

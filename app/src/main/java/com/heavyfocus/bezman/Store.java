@@ -477,7 +477,9 @@ public final class Store {
         if (alarmId == null || alarmId.isEmpty() || "test".equals(occ)) return;
         JSONObject all = items(c);
         String id = "rang:" + alarmId + ":" + occ;
-        if (has(all, id)) return;
+        // one record per day; a parent may move the alarm later the same day, then the new ring replaces it
+        JSONObject prev = all.optJSONObject(id);
+        if (U.alive(prev) && prev.optLong("at") > System.currentTimeMillis() - 5 * U.MIN) return;
         JSONObject l = log(c, id, "rang", alarmId, occ, 0, label == null ? "" : label);
         U.put(l, "ok", ok);
         boolean full = true;

@@ -206,6 +206,16 @@ public final class Notify {
         }
     }
 
+    /** Did something she would care about change in this alarm (time, days, on/off, deleted)? */
+    static boolean alarmChanged(JSONObject old, JSONObject n) {
+        if (old == null) return U.alive(n);
+        if (n.optBoolean("del") != old.optBoolean("del")) return true;
+        if (n.optBoolean("on", true) != old.optBoolean("on", true)) return true;
+        if (!n.optString("time").equals(old.optString("time"))) return true;
+        if (!n.optString("date").equals(old.optString("date"))) return true;
+        return !String.valueOf(n.optJSONArray("days")).equals(String.valueOf(old.optJSONArray("days")));
+    }
+
     /** Shows notifications about things other family members did. */
     public static void onRemote(Context c, List<JSONObject[]> changes) {
         long now = System.currentTimeMillis();
@@ -317,6 +327,19 @@ public final class Notify {
                     if (pts > 0) Store.celebrate(c);
                     family(c, id, "💜 " + n.optString("by") + ": " + title,
                             pts > 0 ? "קיבלת \u200E+" + pts + " ⭐ בונוס" : "הודעה מההורים");
+                } else if ("alarm".equals(kind) && alarmChanged(old, n)) {
+                    // a parent set / moved / turned off her alarm: show that it arrived on this phone
+                    String time = n.optString("time");
+                    String head;
+                    if (n.optBoolean("del")) head = "⏰ שעון מעורר " + time + " בוטל";
+                    else if (!n.optBoolean("on", true)) head = "⏰ השעון המעורר של " + time + " כובה";
+                    else if (old == null) head = "⏰ שעון מעורר חדש: " + time;
+                    else head = "⏰ השעון המעורר עודכן ל-" + time;
+                    String label = n.optString("label");
+                    JSONObject editor = all.optJSONObject("m_" + n.optString("dev"));
+                    String who = editor != null && !editor.optString("name").isEmpty() ? editor.optString("name") : "ההורים";
+                    family(c, id + ":upd:" + n.optLong("upd"), head,
+                            (label.isEmpty() ? "" : label + " · ") + "עודכן על ידי " + who);
                 }
             }
         }

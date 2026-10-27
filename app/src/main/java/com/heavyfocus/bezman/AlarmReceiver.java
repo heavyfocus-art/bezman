@@ -8,6 +8,7 @@ public class AlarmReceiver extends BroadcastReceiver {
     public static final String FIRE = "com.heavyfocus.bezman.FIRE";
     public static final String RING = "com.heavyfocus.bezman.RING";
     public static final String ACT = "com.heavyfocus.bezman.ACT";
+    public static final String SYNC = "com.heavyfocus.bezman.SYNC";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -26,9 +27,18 @@ public class AlarmReceiver extends BroadcastReceiver {
                         AlarmService.start(c, id, occ, label);
                     } else {
                         // the scheduled wake-up alarm: ring first (while Android allows it), then the rest
-                        if (Sched.stillDue(c, id, occ) && Sched.claim(c, id, occ)) Sched.ring(c, id, occ, label);
+                        long at = in.getLongExtra("at", 0);
+                        if (Sched.stillDue(c, id, occ, at) && Sched.claim(c, id, occ, at)) Sched.ring(c, id, occ, label);
                         Sched.process(c);
                     }
+                } else if (SYNC.equals(a)) {
+                    // the 15-minute check on the child's phone: bring the live connection back
+                    // (Android allows it from here) and fetch what the parents changed
+                    Store.setLong(c, "nextSyncAt", 0);
+                    LiveService.start(c);
+                    Sync.syncNow(c);
+                    Sched.reschedule(c);
+                    Widgets.updateAll(c);
                 } else if (ACT.equals(a)) {
                     String what = in.getStringExtra("what");
                     String id = in.getStringExtra("ref");
@@ -47,7 +57,8 @@ public class AlarmReceiver extends BroadcastReceiver {
                     }
                     Sync.flush(c);
                 } else {
-                    // boot, app update, time change
+                    // boot, app update, time change: Android forgot our wake-ups, set them again
+                    Store.setLong(c, "nextSyncAt", 0);
                     Sched.reschedule(c);
                     SyncJob.schedule(c);
                     LiveService.start(c);
