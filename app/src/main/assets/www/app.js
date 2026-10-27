@@ -489,9 +489,31 @@ const agoTxt = t => { if (!t) return 'אף פעם'; const m = Math.round((Date.n
 function syncStatus() {
   const e = S.me.syncErr || '';
   const err = e === '429' ? '⚠️ שרת ההודעות ביקש להאט (הרבה הודעות בבת אחת, למשל אחרי התקנות מחדש). מנסה שוב לבד תוך כמה דקות.'
-    : e === 'net' ? '⚠️ אין חיבור לאינטרנט – ינסה שוב כשיהיה' : e ? '⚠️ תקלה בסנכרון (' + esc(e) + ') – ינסה שוב לבד' : '';
-  return `<div class="small"><b>${err ? err : '✅ הסנכרון תקין'}</b></div>
-    <div class="small muted" style="margin-top:4px">שליחה אחרונה: ${agoTxt(S.me.sendOk)} · קבלה אחרונה: ${agoTxt(S.me.recvOk)}${S.me.outbox ? ` · <b style="color:var(--red)">${S.me.outbox} שינויים מחכים לשליחה</b>` : ''}</div>`;
+    : e.indexOf('net') === 0 ? '⚠️ הטלפון לא מצליח להגיע לשרת ההודעות של המשפחה (ntfy.sh). לוחצים "בדיקת חיבור" למטה.'
+    : e ? '⚠️ תקלה בסנכרון (' + esc(e) + ') – ינסה שוב לבד' : '';
+  const detail = e.indexOf('net:') === 0 ? `<div class="small muted" dir="ltr" style="text-align:left;margin-top:4px;word-break:break-all">${esc(e.slice(4))}</div>` : '';
+  return `<div class="small"><b>${err ? err : '✅ הסנכרון תקין'}</b></div>${detail}
+    <div class="small muted" style="margin-top:4px">שליחה אחרונה: ${agoTxt(S.me.sendOk)} · קבלה אחרונה: ${agoTxt(S.me.recvOk)}${S.me.outbox ? ` · <b style="color:var(--red)">${S.me.outbox} שינויים מחכים לשליחה</b>` : ''}</div>
+    ${netTestHtml()}`;
+}
+/** Result of the connection check: which sites this phone can reach. */
+function netTestHtml() {
+  const btn = `<button class="btn light small block" style="margin-top:10px" data-nettest="1">🩺 בדיקת חיבור</button>`;
+  const t = S.me.netTest || '';
+  if (!t) return btn;
+  if (t === 'running') return `<div class="small muted" style="margin-top:10px">🩺 בודק חיבור… (עד חצי דקה)</div>`;
+  let rows = [];
+  try { rows = JSON.parse(t); } catch (e) { return btn; }
+  const ok = r => r.res.indexOf('ok:') === 0;
+  const ntfy = rows[0], others = rows.slice(1);
+  let verdict = '';
+  if (ntfy && ok(ntfy)) verdict = '✅ שרת ההודעות נגיש. אם עדיין לא מסתנכרן – לוחצים "לסנכרן עכשיו" ושולחים צילום.';
+  else if (others.some(ok)) verdict = '🚫 האינטרנט עובד, אבל <b>ntfy.sh חסום</b> בחיבור הזה – כנראה סינון תוכן (חברת הסלולר / הראוטר / DNS מסנן). מנסים ברשת אחרת (Wi-Fi ↔ סלולר), או מבקשים מהספק לאשר את ntfy.sh.';
+  else verdict = '⚠️ אף אתר לא נגיש מהאפליקציה – לבדוק שלאפליקציה מותר להשתמש בנתונים (הגדרות ← אפליקציות ← בזמן ← נתונים ניידים / חוסך נתונים).';
+  return `<div class="card" style="background:var(--bg);box-shadow:none;margin:10px 0 0;padding:10px 12px">
+    ${rows.map(r => `<div class="small" style="display:flex;gap:6px;align-items:flex-start;margin:3px 0"><span>${ok(r) ? '✅' : '❌'}</span>
+      <span style="flex:1"><b>${esc(r.name)}</b>${ok(r) ? '' : `<br><span class="muted" dir="ltr" style="word-break:break-all">${esc(r.res.replace(/^(err|http):/, ''))}</span>`}</span></div>`).join('')}
+    <div class="small" style="margin-top:6px">${verdict}</div></div>${btn}`;
 }
 /** Every phone in the family: version, where it was installed from, last sync. */
 function phonesCard() {
@@ -870,6 +892,7 @@ function bindCommon() {
   });
   document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => { TAB = b.dataset.tab; render(); window.scrollTo(0, 0); });
   document.querySelectorAll('[data-sync]').forEach(b => b.onclick = () => { B.syncNow(); toast('מסנכרן…'); });
+  document.querySelectorAll('[data-nettest]').forEach(b => b.onclick = () => { if (B.netTest) B.netTest(); else toast('צריך לעדכן גרסה'); });
   document.querySelectorAll('[data-done]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
     const t = item(b.dataset.done), occ = b.dataset.occ;

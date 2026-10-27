@@ -120,6 +120,40 @@ public final class Sync {
     /** The relay asked us to slow down (HTTP 429): wait before sending again. */
     static volatile long waitUntil = 0;
 
+    /** Short reason for a connection problem, e.g. "UnknownHostException: Unable to resolve host ntfy.sh". */
+    static String why(Exception e) {
+        String m = e.getMessage();
+        String r = e.getClass().getSimpleName() + (m == null ? "" : ": " + m);
+        return r.length() > 140 ? r.substring(0, 140) : r;
+    }
+
+    /** Tries the family relay and two well-known sites; tells which ones this phone can reach. */
+    static String netTest() {
+        String[][] urls = {
+                {"ntfy.sh (שרת ההודעות של המשפחה)", BASE + "v1/health"},
+                {"google.com", "https://www.google.com/generate_204"},
+                {"github.com (עדכוני גרסה)", "https://api.github.com/"}};
+        JSONArray out = new JSONArray();
+        for (String[] u : urls) {
+            HttpURLConnection con = null;
+            String res;
+            long t0 = System.currentTimeMillis();
+            try {
+                con = (HttpURLConnection) new URL(u[1]).openConnection();
+                con.setConnectTimeout(10000);
+                con.setReadTimeout(10000);
+                int rc = con.getResponseCode();
+                res = (rc >= 200 && rc < 400 ? "ok:" : "http:") + rc;
+            } catch (Exception e) {
+                res = "err:" + why(e);
+            } finally {
+                if (con != null) con.disconnect();
+            }
+            out.put(U.obj("name", u[0], "res", res, "ms", System.currentTimeMillis() - t0));
+        }
+        return out.toString();
+    }
+
     static boolean post(String topic, String body) {
         if (System.currentTimeMillis() < waitUntil) return false;
         HttpURLConnection con = null;
@@ -144,7 +178,7 @@ public final class Sync {
             }
             return code >= 200 && code < 300;
         } catch (Exception e) {
-            lastErr = "net";
+            lastErr = "net:" + why(e);
             return false;
         } finally {
             if (con != null) con.disconnect();
@@ -285,7 +319,7 @@ public final class Sync {
             Store.setLong(c, "lastSnapAt", lastSnap);
             Store.setLong(c, "lastRecvOk", System.currentTimeMillis());
         } catch (Exception e) {
-            lastErr = "net";
+            lastErr = "net:" + why(e);
         } finally {
             if (con != null) con.disconnect();
         }

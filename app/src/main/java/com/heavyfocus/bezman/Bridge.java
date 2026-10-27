@@ -37,7 +37,8 @@ public class Bridge {
                 "live", Store.p(c).getBoolean("live", true),
                 "latest", Store.getStr(c, "latestVer"), "syncErr", Store.getStr(c, "syncErr"),
                 "sendOk", Store.getLong(c, "lastSendOk"), "recvOk", Store.getLong(c, "lastRecvOk"),
-                "outbox", Store.outbox(c).size());
+                "outbox", Store.outbox(c).size(), "netTest", Store.getStr(c, "netTest"),
+                "netTestAt", Store.getLong(c, "netTestAt"));
         if (Store.isChild(c)) {
             U.put(me, "kid", Store.myKid(c));
             U.put(me, "theme", Store.myTheme(c));
@@ -101,6 +102,18 @@ public class Bridge {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 10; i++) sb.append(abc.charAt(r.nextInt(abc.length())));
         return sb.toString();
+    }
+
+    /** Connection check in the settings; the result arrives in state().netTest. */
+    @JavascriptInterface
+    public void netTest() {
+        Store.setStr(c, "netTest", "running");
+        MainActivity.refreshUi();
+        new Thread(() -> {
+            Store.setStr(c, "netTest", Sync.netTest());
+            Store.setLong(c, "netTestAt", System.currentTimeMillis());
+            MainActivity.refreshUi();
+        }).start();
     }
 
     @JavascriptInterface
