@@ -187,6 +187,17 @@ public final class Store {
         }
     }
 
+    static boolean wasNotified(Context c, String key) {
+        synchronized (LOCK) {
+            try {
+                JSONArray a = new JSONArray(p(c).getString("notified", "[]"));
+                for (int i = 0; i < a.length(); i++) if (key.equals(a.optString(i))) return true;
+            } catch (Exception ignored) {
+            }
+            return false;
+        }
+    }
+
     // ---------- setup ----------
     public static void setup(Context c, String role, String name, String code) {
         setup(c, role, name, code, "f", "purple");
@@ -458,6 +469,27 @@ public final class Store {
         return true;
     }
 
+    /**
+     * The wake-up alarm went off on this phone. ok=false: Android did not let the app start ringing.
+     * Shared with the parents so they can see that the alarm really rang (or why not).
+     */
+    static void rang(Context c, String alarmId, String occ, String label, boolean ok) {
+        if (alarmId == null || alarmId.isEmpty() || "test".equals(occ)) return;
+        JSONObject all = items(c);
+        String id = "rang:" + alarmId + ":" + occ;
+        if (has(all, id)) return;
+        JSONObject l = log(c, id, "rang", alarmId, occ, 0, label == null ? "" : label);
+        U.put(l, "ok", ok);
+        boolean full = true;
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 34) full = Notify.nm(c).canUseFullScreenIntent();
+        } catch (Exception ignored) {
+        }
+        U.put(l, "full", full);
+        upsertLocal(c, l);
+        afterLocalChange(c);
+    }
+
     /** Automatic check: alarm rang 10 minutes ago and she did not stop it. */
     static void wakeMissed(Context c, String alarmId, String occ, String label) {
         JSONObject all = items(c);
@@ -485,7 +517,7 @@ public final class Store {
             String occ = U.occ(d);
             boolean hasAlarm = false, ok = false;
             for (JSONObject a : alarms) {
-                if (!a.optBoolean("on", true) || !U.occursOn(a, d)) continue;
+                if (!a.optBoolean("on", true) || !U.occursOn(a, d) || U.isOff(all, a.optString("id"), occ)) continue;
                 hasAlarm = true;
                 JSONObject w = all.optJSONObject("woke:" + a.optString("id") + ":" + occ);
                 if (U.alive(w) && w.optInt("pts") >= 10) ok = true;

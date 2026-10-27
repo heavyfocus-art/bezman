@@ -36,12 +36,13 @@ const SECTIONS = {
 const DEF_ORDER = ['approvals', 'redeems', 'stats', 'today', 'gift', 'week', 'tomorrow'];
 const TABS_ALL = {
   today:   ['🏠', 'היום'],
+  calendar:['📅', 'יומן'],
   plan:    ['🗓️', 'לו״ז'],
   report:  ['📊', 'דוח'],
   rewards: ['🎁', 'פרסים'],
   settings:['⚙️', 'הגדרות'],
 };
-const DEF_TABS_PARENT = ['today', 'plan', 'report', 'rewards', 'settings'];
+const DEF_TABS_PARENT = ['today', 'calendar', 'plan', 'report', 'rewards', 'settings'];
 const DEF_TABS_CHILD = ['today', 'plan', 'rewards', 'settings'];
 
 let UI = null;
@@ -60,7 +61,10 @@ function saveUi() {
 function tabOrder() {
   const def = isChild() ? DEF_TABS_CHILD : DEF_TABS_PARENT;
   const t = (!isChild() && uiPrefs().tabs) || def;
-  return t.filter(k => def.indexOf(k) >= 0).concat(def.filter(k => t.indexOf(k) < 0));
+  const out = t.filter(k => def.indexOf(k) >= 0);
+  // a tab added in a newer version goes next to its usual neighbour
+  def.forEach((k, i) => { if (out.indexOf(k) < 0) out.splice(i ? out.indexOf(def[i - 1]) + 1 : 0, 0, k); });
+  return out;
 }
 
 /** Applies colors / background / text size. Only parents personalise; kids keep their own theme. */

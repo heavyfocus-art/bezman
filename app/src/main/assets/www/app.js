@@ -113,14 +113,21 @@ window.onNative = () => {
 };
 window.onBack = () => {
   if (MODAL) { closeModal(); return true; }
+  if (S && TAB === 'calendar' && CAL && CAL.day) { CAL.day = null; render(); return true; }
   if (S && S.me.role && TAB !== 'today') { TAB = 'today'; render(); return true; }
   return false;
 };
 
-const PER_KID = ['alarm', 'event', 'task', 'reward', 'redeem', 'log'];
+const PER_KID = ['alarm', 'event', 'task', 'reward', 'redeem', 'log', 'off'];
 function save(items) {
   items = Array.isArray(items) ? items : [items];
-  items.forEach(it => { if (PER_KID.indexOf(it.kind) >= 0 && !it.kid && KID) it.kid = KID; });
+  items.forEach(it => {
+    if (PER_KID.indexOf(it.kind) < 0 || it.kid) return;
+    const old = S.items[it.id];
+    // an existing item keeps its child (old items without "kid" belong to the first child)
+    const k = old ? kidOf(old) : KID;
+    if (k) it.kid = k;
+  });
   S = JSON.parse(B.upsert(JSON.stringify(items)));
   render();
 }
@@ -225,24 +232,37 @@ function celebrate() {
 }
 
 // ---------- agenda for a day ----------
-function agenda(d) {
+/** Turned off by a parent for this one day only. */
+const offOn = (id, occ) => !!item(`off:${id}:${occ}`);
+/** kid: whose day (default: the selected child). withOff: also rows a parent turned off for that day (marked r.off). */
+function agenda(d, kid, withOff) {
+  kid = kid || KID;
   const occ = occOf(d);
   const rows = [];
-  mine('alarm').filter(a => a.on !== false && occursOn(a, d) && mins(a.time) >= 0).forEach(a => {
-    rows.push({ type: 'alarm', t: at(occ, mins(a.time)), it: a, occ,
+  const of = kind => list(kind).filter(i => kidOf(i) === kid && occursOn(i, d) && (withOff || !offOn(i.id, occ)));
+  of('alarm').filter(a => a.on !== false && mins(a.time) >= 0).forEach(a => {
+    rows.push({ type: 'alarm', t: at(occ, mins(a.time)), it: a, occ, off: offOn(a.id, occ), rang: item(`rang:${a.id}:${occ}`),
       log: item(`woke:${a.id}:${occ}`), miss: item(`wakemiss:${a.id}:${occ}`), snooze: item(`snooze:${a.id}:${occ}`) });
   });
-  mine('event').filter(e => occursOn(e, d) && mins(e.start) >= 0).forEach(e => {
+  of('event').filter(e => mins(e.start) >= 0).forEach(e => {
     const start = at(occ, mins(e.start));
     const leave = start - (e.travel || 0) * 60000;
-    rows.push({ type: 'event', t: leave, start, leave, prepAt: leave - (e.prep || 0) * 60000, it: e, occ,
+    rows.push({ type: 'event', t: leave, start, leave, prepAt: leave - (e.prep || 0) * 60000, it: e, occ, off: offOn(e.id, occ),
       log: item(`left:${e.id}:${occ}`), miss: item(`leavemiss:${e.id}:${occ}`) });
   });
-  mine('task').filter(k => occursOn(k, d)).forEach(k => {
+  of('task').forEach(k => {
     const m = mins(k.time);
-    rows.push({ type: 'task', t: at(occ, m >= 0 ? m : 1439), it: k, occ, log: item(`task:${k.id}:${occ}`) });
+    rows.push({ type: 'task', t: at(occ, m >= 0 ? m : 1439), it: k, occ, off: offOn(k.id, occ), log: item(`task:${k.id}:${occ}`) });
   });
   return rows.sort((a, b) => a.t - b.t);
+}
+/** Did the wake-up alarm really ring on the child's phone? (shown to parents) */
+function alarmNote(r, now) {
+  if (r.log || r.off) return '';
+  if (r.rang && r.rang.ok === false) return ` <span class="pill warn">⚠️ הטלפון חסם את הצלצול – לבדוק הרשאות</span>`;
+  if (r.rang) return ` <span class="pill sun">🔔 צלצל ב-${tHM(r.rang.at)}</span>`;
+  if (now > r.t + 15 * 60000 && r.occ === occOf(new Date())) return ` <span class="pill warn">⚠️ אין אישור שהשעון צלצל</span>`;
+  return '';
 }
 
 function rowHtml(r, child, now) {
@@ -252,7 +272,7 @@ function rowHtml(r, child, now) {
     if (r.log) st = `<span class="pill ok">${child ? 'קמת' : G('קמה', 'קם')} ב-${tHM(r.log.at)} · \u200E+${r.log.pts}⭐</span>`;
     else if (r.miss) st = `<span class="pill warn">⚠️ השעון לא כובה בזמן</span>`;
     else if (now < r.t) st = `<span class="pill wait">מתוכנן</span>`;
-    else st = `<span class="pill sun">מצלצל…</span>`;
+    else st = child ? `<span class="pill sun">מצלצל…</span>` : (alarmNote(r, now) || `<span class="pill sun">מצלצל…</span>`);
     return `<div class="row ${r.log ? 'done' : ''}">
       <div class="ico ${r.log ? 'ok' : 'alarm'}">${r.log ? '☀️' : '⏰'}</div>
       <div class="body"><div class="t1">השכמה${it.label ? ' · ' + esc(it.label) : ''}</div><div class="t2">${st}${r.snooze && r.log ? ' <span class="small muted">(עם נודניק)</span>' : ''}</div></div>
@@ -381,9 +401,10 @@ function render() {
   document.body.dataset.theme = th === 'yb' || th === 'orange' ? th : 'purple';
   applyDesign();
   bars();
-  if (TAB === 'report' && isChild()) TAB = 'today';
+  if ((TAB === 'report' || TAB === 'calendar') && isChild()) TAB = 'today';
   let body = '';
   if (TAB === 'today') body = isChild() ? childToday() : parentToday();
+  else if (TAB === 'calendar') body = calendarScreen();
   else if (TAB === 'plan') body = planScreen();
   else if (TAB === 'report') body = reportScreen();
   else if (TAB === 'rewards') body = rewardsScreen();
@@ -774,6 +795,7 @@ const val = sel => { const e = $(sel); return e ? e.value : ''; };
 
 // ---------- events ----------
 function bindCommon() {
+  if (typeof bindCalendar === 'function') bindCalendar();
   document.querySelectorAll('[data-design]').forEach(b => b.onclick = openDesign);
   document.querySelectorAll('[data-mic]').forEach(b => b.onclick = () => startVoice('new'));
   document.querySelectorAll('[data-rep]').forEach(b => b.onclick = () => { REP = b.dataset.rep; render(); });
@@ -933,6 +955,26 @@ function dayPicker(days) {
 function opts(name, values, cur, fmt) {
   return `<div class="opts" data-opts="${name}">${values.map(v => `<button type="button" class="${v === cur ? 'on' : ''}" data-v="${v}">${fmt ? fmt(v) : v}</button>`).join('')}</div>`;
 }
+/** Any whole number the parent wants, plus quick buttons. */
+function numPick(id, cur, quick, fmt, min) {
+  return `<div class="numpick"><input class="in num" id="${id}" type="number" inputmode="numeric" min="${min}" max="999" step="1" value="${cur}">
+    <div class="opts quick" data-for="${id}">${quick.map(v => `<button type="button" class="${v === cur ? 'on' : ''}" data-q="${v}">${fmt(v)}</button>`).join('')}</div></div>`;
+}
+function bindNum(root) {
+  root.querySelectorAll('.numpick').forEach(w => {
+    const inp = w.querySelector('input');
+    const mark = () => w.querySelectorAll('[data-q]').forEach(b => b.classList.toggle('on', +b.dataset.q === +inp.value && inp.value !== ''));
+    w.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { inp.value = b.dataset.q; mark(); });
+    inp.oninput = mark;
+  });
+}
+/** Reads a whole number from a numPick; null if it is not a whole number in range. */
+function readNum(root, id, min) {
+  const v = String(root.querySelector('#' + id).value).trim();
+  if (!/^\d{1,3}$/.test(v)) return null;
+  const n = parseInt(v, 10);
+  return n >= min && n <= 999 ? n : null;
+}
 function bindPick(root, draft) {
   root.querySelectorAll('[data-day]').forEach(b => b.onclick = () => {
     const i = +b.dataset.day;
@@ -1052,20 +1094,26 @@ function openEditor(kind, it, pre) {
       ${whenFields(d)}
       <label class="f">עד איזו שעה?</label><input class="in time" type="time" id="f-time" value="${esc(base.time || '20:00')}">
       ${isChild() ? `<div class="hint">⭐ ${isNew ? 'המשימה תהיה שווה' : 'המשימה שווה'} ${d.pts} נקודות. את הנקודות קובעים ההורים.</div>`
-        : `<label class="f">כמה נקודות?</label>${opts('pts', [3, 5, 10, 15, 20], d.pts, v => v + '⭐')}
+        : `<label class="f">כמה נקודות? (כל מספר)</label>${numPick('f-pts', d.pts, [1, 2, 3, 5, 7, 10, 15, 20], v => v + '⭐', 1)}
       <label class="f">📷 לבקש תמונה כשמסיימים?</label>${opts('photo', [0, 1], d.photo, v => v ? 'כן, עם תמונה' : 'בלי תמונה')}`}
       <div class="hint">🔔 תזכורת חצי שעה לפני ובזמן. "בוצע" נשלח להורים לאישור – בזמן = כל הנקודות, באיחור = חצי. "לא בוצע" (או בלי סימון עד סוף היום) = מינוס חצי.</div>
       <div class="actions">${del}<button class="btn" data-save="1">שמירה</button></div>`, root => {
       bindPick(root, d);
+      bindNum(root);
       root.querySelector('[data-save]').onclick = () => {
         const title = root.querySelector('#f-title').value.trim();
         const time = root.querySelector('#f-time').value;
         if (!title) return toast('צריך לכתוב מה');
         if (mins(time) < 0) return toast('צריך לבחור שעה');
+        let pts = base.pts || 5;
+        if (!isChild()) {
+          pts = readNum(root, 'f-pts', 1);
+          if (pts == null) return toast('נקודות: מספר שלם בין 1 ל-999');
+        }
         const out = {};
         if (!readWhen(root, d, out)) return;
         MODAL = null; $('#modal-root').innerHTML = '';
-        const extra = isChild() ? { pts: base.pts || 5, photo: !!base.photo } : { pts: d.pts, photo: !!d.photo };
+        const extra = isChild() ? { pts, photo: !!base.photo } : { pts, photo: !!d.photo };
         save(Object.assign(base, out, { id: base.id || uid('tk'), kind: 'task', title, time }, extra));
         toast('המשימה נשמרה ✅');
       };
@@ -1098,12 +1146,15 @@ function openEditor(kind, it, pre) {
     const d = { pts: 10 };
     openModal(`<h3>💜 בונוס / מילה טובה ל${esc(kidName())}</h3>
       <label class="f" style="margin-top:0">מה רוצים להגיד?</label><input class="in" id="f-title" placeholder="למשל: גאה בך על השבוע הזה!">
-      <label class="f">נקודות בונוס</label>${opts('pts', [0, 5, 10, 20, 50], d.pts, v => v ? '\u200E+' + v : 'רק מילה טובה')}
+      <label class="f">נקודות בונוס (כל מספר, 0 = רק מילה טובה)</label>${numPick('f-pts', d.pts, [0, 1, 2, 5, 7, 10, 20, 50], v => v ? '\u200E+' + v : 'רק מילה טובה', 0)}
       <div class="actions"><button class="btn light" data-c="no">ביטול</button><button class="btn" data-save="1">לשלוח 💌</button></div>`, root => {
-      bindPick(root, d);
+      bindNum(root);
       root.querySelector('[data-c=no]').onclick = closeModal;
       root.querySelector('[data-save]').onclick = () => {
         const title = root.querySelector('#f-title').value.trim() || 'כל הכבוד!';
+        const p = readNum(root, 'f-pts', 0);
+        if (p == null) return toast('נקודות: מספר שלם בין 0 ל-999');
+        d.pts = p;
         MODAL = null; $('#modal-root').innerHTML = '';
         save({ id: uid('gift'), kind: 'log', type: 'gift', ref: '', occ: occOf(new Date()), pts: d.pts, title, at: Date.now() });
         confetti(); toast('נשלח 💜');

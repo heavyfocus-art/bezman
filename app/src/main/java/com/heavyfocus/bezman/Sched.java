@@ -67,7 +67,7 @@ public final class Sched {
         while (!d.after(end)) {
             String occ = U.occ(d);
             for (JSONObject a : alarms) {
-                if (!a.optBoolean("on", true) || !U.occursOn(a, d)) continue;
+                if (!a.optBoolean("on", true) || !U.occursOn(a, d) || U.isOff(all, a.optString("id"), occ)) continue;
                 int m = U.mins(a.optString("time"));
                 if (m < 0) continue;
                 long t = U.at(d, m);
@@ -76,7 +76,7 @@ public final class Sched {
                 out.add(new T(t + 10 * U.MIN, WAKE_CHECK, a.optString("id"), occ, label, t));
             }
             for (JSONObject e : events) {
-                if (!U.occursOn(e, d)) continue;
+                if (!U.occursOn(e, d) || U.isOff(all, e.optString("id"), occ)) continue;
                 long leave = U.leaveAt(e, occ);
                 if (leave == 0) continue;
                 String title = e.optString("title");
@@ -88,7 +88,7 @@ public final class Sched {
                 out.add(new T(leave + 10 * U.MIN, LEAVE_CHECK, e.optString("id"), occ, title, leave));
             }
             for (JSONObject k : tasks) {
-                if (!U.occursOn(k, d)) continue;
+                if (!U.occursOn(k, d) || U.isOff(all, k.optString("id"), occ)) continue;
                 int m = U.mins(k.optString("time"));
                 if (m < 0) continue;
                 long due = U.at(d, m);
@@ -141,23 +141,71 @@ public final class Sched {
         }
     }
 
+    /**
+     * The wake-up alarm itself: Android wakes us straight into "ring this alarm" (with its id and day),
+     * so it rings even if a reminder was handled a few seconds before it.
+     */
+    static PendingIntent ringPi(Context c, T t) {
+        Intent i = new Intent(c, AlarmReceiver.class).setAction(AlarmReceiver.RING);
+        if (t != null) {
+            i.putExtra("id", t.id).putExtra("occ", t.occ).putExtra("label", t.title).putExtra("at", t.time);
+        }
+        return PendingIntent.getBroadcast(c, 100, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /** True only for the first caller for this alarm on this day (so it never rings twice). */
+    static boolean claim(Context c, String id, String occ) {
+        return Store.markNotified(c, "ring:" + id + ":" + occ);
+    }
+
+    static boolean rung(Context c, String id, String occ) {
+        return Store.wasNotified(c, "ring:" + id + ":" + occ);
+    }
+
+    /** Is this alarm still wanted on that day (not deleted, not switched off, not off for the day)? */
+    static boolean stillDue(Context c, String id, String occ) {
+        JSONObject all = Store.items(c);
+        JSONObject a = all.optJSONObject(id);
+        if (!U.alive(a) || !a.optBoolean("on", true) || U.isOff(all, id, occ)) return false;
+        java.util.Calendar d = U.dayOf(occ);
+        if (d == null || !U.occursOn(a, d)) return false;
+        return Store.kidOf(a, Store.legacyKid(all)).equals(Store.myKid(c));
+    }
+
+    /** Starts ringing and records that it rang (the parents see it, or see that the phone blocked it). */
+    static void ring(Context c, String id, String occ, String label) {
+        boolean ok = AlarmService.start(c, id, occ, label);
+        try {
+            Store.rang(c, id, occ, label, ok);
+        } catch (Exception ignored) {
+        }
+    }
+
     public static synchronized void reschedule(Context c) {
         AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
-        PendingIntent piA = firePi(c, 100), piR = firePi(c, 101);
-        am.cancel(piA);
+        PendingIntent piR = firePi(c, 101);
+        am.cancel(firePi(c, 100)); // older versions woke the wake-up alarm through FIRE
+        am.cancel(ringPi(c, null));
         am.cancel(piR);
         if (!Store.isChild(c)) return;
         long now = System.currentTimeMillis();
         long floor = Math.max(Store.getLong(c, "lastProc"), now - U.MIN);
         if (floor > now + 2 * U.MIN) floor = now - U.MIN; // clock went back
         T nextA = null, nextR = null;
-        for (T t : compute(c, floor, now + 3 * U.DAY)) {
-            if (ALARM.equals(t.type)) {
-                if (nextA == null) nextA = t;
-            } else if (nextR == null) nextR = t;
-            if (nextA != null && nextR != null) break;
+        // Alarms: the next one that did not ring yet (independent of the reminders' progress).
+        for (T t : compute(c, now - U.MIN, now + 3 * U.DAY)) {
+            if (ALARM.equals(t.type) && !rung(c, t.id, t.occ)) {
+                nextA = t;
+                break;
+            }
         }
-        if (nextA != null) setClock(c, nextA.time, piA);
+        for (T t : compute(c, floor, now + 3 * U.DAY)) {
+            if (!ALARM.equals(t.type)) {
+                nextR = t;
+                break;
+            }
+        }
+        if (nextA != null) setClock(c, nextA.time, ringPi(c, nextA));
         if (nextR != null) setExact(c, nextR.time, piR);
     }
 
@@ -171,6 +219,8 @@ public final class Sched {
         List<T> due = Store.isChild(c) ? compute(c, from, to) : new ArrayList<>();
         Store.setLong(c, "lastProc", to);
         for (T t : due) {
+            // A wake-up alarm is never rung early; its own exact "ring" wake-up handles it.
+            if (ALARM.equals(t.type) && t.time > now + 2000) continue;
             try {
                 handle(c, t);
             } catch (Exception ignored) {
@@ -183,7 +233,7 @@ public final class Sched {
         JSONObject all = Store.items(c);
         switch (t.type) {
             case ALARM:
-                AlarmService.start(c, t.id, t.occ, t.title);
+                if (claim(c, t.id, t.occ)) ring(c, t.id, t.occ, t.title);
                 break;
             case WAKE_CHECK:
                 if (!Store.has(all, "woke:" + t.id + ":" + t.occ)) Store.wakeMissed(c, t.id, t.occ, t.title);

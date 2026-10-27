@@ -30,26 +30,49 @@ public class AlarmService extends Service {
     int prevVol = -1;
     final Handler h = new Handler(Looper.getMainLooper());
 
-    public static void start(Context c, String id, String occ, String label) {
+    /** Returns false if Android refused to start the ringing service (then a ringing notification is used). */
+    public static boolean start(Context c, String id, String occ, String label) {
         Intent i = new Intent(c, AlarmService.class)
                 .putExtra("id", id == null ? "" : id)
                 .putExtra("occ", occ == null ? "" : occ)
                 .putExtra("label", label == null ? "" : label);
         try {
             c.startForegroundService(i);
+            return true;
         } catch (Exception e) {
-            // Could not start in background: at least show the alarm screen notification.
+            // Android did not allow it from the background: a notification that keeps ringing on the alarm sound,
+            // which opens the alarm screen.
+            boostVolume(c);
             try {
-                Notify.remind(c, "alarmfallback", "⏰ בוקר טוב! זמן לקום", label, null, null, null);
+                Notify.alarmFallback(c, id, occ, label);
             } catch (Exception ignored) {
             }
+            return false;
         }
     }
 
     public static void stop(Context c) {
         try {
+            Notify.cancelAlarmFallback(c);
+        } catch (Exception ignored) {
+        }
+        try {
             c.startService(new Intent(c, AlarmService.class).setAction(STOP));
         } catch (Exception ignored) {
+        }
+    }
+
+    /** Makes sure the alarm volume is not (almost) silent. Returns the old volume, or -1. */
+    static int boostVolume(Context c) {
+        try {
+            AudioManager am = (AudioManager) c.getSystemService(AUDIO_SERVICE);
+            int prev = am.getStreamVolume(AudioManager.STREAM_ALARM);
+            int max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+            int target = (int) Math.ceil(max * 0.85);
+            if (prev < target) am.setStreamVolume(AudioManager.STREAM_ALARM, target, 0);
+            return prev;
+        } catch (Exception ignored) {
+            return -1;
         }
     }
 
@@ -88,10 +111,14 @@ public class AlarmService extends Service {
                 startForeground(1001, n);
             }
         } catch (Exception e) {
+            // Not allowed to run as a foreground service: ring with the alarm notification instead.
+            boostVolume(this);
             try {
-                Notify.nm(this).notify(1001, n);
+                Notify.alarmFallback(this, id, occ, label);
             } catch (Exception ignored) {
             }
+            stopSelf();
+            return START_NOT_STICKY;
         }
         startRinging();
         try {
@@ -120,14 +147,7 @@ public class AlarmService extends Service {
                 .setUsage(AudioAttributes.USAGE_ALARM)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .build();
-        try {
-            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-            prevVol = am.getStreamVolume(AudioManager.STREAM_ALARM);
-            int max = am.getStreamMaxVolume(AudioManager.STREAM_ALARM);
-            int target = (int) Math.ceil(max * 0.85);
-            if (prevVol < target) am.setStreamVolume(AudioManager.STREAM_ALARM, target, 0);
-        } catch (Exception ignored) {
-        }
+        prevVol = boostVolume(this);
         String chosen = Store.getStr(this, "ringtone");
         Uri[] uris = {
                 chosen.isEmpty() ? null : Uri.parse(chosen),

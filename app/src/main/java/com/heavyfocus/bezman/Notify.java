@@ -17,6 +17,8 @@ public final class Notify {
     private Notify() {}
 
     static final String CH_ALARM = "alarm2";
+    static final String CH_RING = "alarm_ring";
+    static final int ID_RING = 1003;
     static final String CH_REMIND = "remind";
     static final String CH_FAMILY = "family";
 
@@ -31,6 +33,18 @@ public final class Notify {
         a.setBypassDnd(true);
         a.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         nm.createNotificationChannel(a);
+
+        // Backup for the wake-up alarm when Android does not let the app start its ringing service:
+        // the notification itself rings (again and again) on the alarm sound.
+        NotificationChannel rg = new NotificationChannel(CH_RING, "שעון מעורר – צלצול גיבוי", NotificationManager.IMPORTANCE_HIGH);
+        rg.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
+                new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+        rg.enableVibration(true);
+        rg.setVibrationPattern(new long[]{0, 800, 600, 800});
+        rg.setBypassDnd(true);
+        rg.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+        nm.createNotificationChannel(rg);
 
         NotificationChannel r = new NotificationChannel(CH_REMIND, "תזכורות יציאה ומשימות", NotificationManager.IMPORTANCE_HIGH);
         r.enableVibration(true);
@@ -74,6 +88,39 @@ public final class Notify {
         }
         try {
             nm(c).notify(nid(key), b.build());
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Ringing notification (repeats its alarm sound until opened) that opens the alarm screen. */
+    static void alarmFallback(Context c, String id, String occ, String label) {
+        Intent full = new Intent(c, AlarmActivity.class)
+                .putExtra("id", id == null ? "" : id).putExtra("occ", occ == null ? "" : occ)
+                .putExtra("label", label == null ? "" : label)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION);
+        PendingIntent fpi = PendingIntent.getActivity(c, 8, full,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification n = new Notification.Builder(c, CH_RING)
+                .setSmallIcon(R.drawable.ic_notif)
+                .setContentTitle("⏰ בוקר טוב! זמן לקום")
+                .setContentText(label == null || label.isEmpty() ? "לוחצים כאן כדי לכבות" : label)
+                .setCategory(Notification.CATEGORY_ALARM)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setFullScreenIntent(fpi, true)
+                .setContentIntent(fpi)
+                .setOngoing(true)
+                .setColor(0xFFFF7A59)
+                .build();
+        n.flags |= Notification.FLAG_INSISTENT;
+        try {
+            nm(c).notify(ID_RING, n);
+        } catch (Exception ignored) {
+        }
+    }
+
+    static void cancelAlarmFallback(Context c) {
+        try {
+            nm(c).cancel(ID_RING);
         } catch (Exception ignored) {
         }
     }

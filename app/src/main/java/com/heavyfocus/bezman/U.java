@@ -106,6 +106,11 @@ public final class U {
         return it != null && !it.optBoolean("del", false);
     }
 
+    /** A parent turned this alarm / task / event off for one day only (item "off:<id>:<day>"). */
+    public static boolean isOff(JSONObject all, String id, String occ) {
+        return all != null && alive(all.optJSONObject("off:" + id + ":" + occ));
+    }
+
     public static void put(JSONObject o, String k, Object v) {
         try {
             o.put(k, v);

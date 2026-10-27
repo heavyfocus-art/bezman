@@ -20,7 +20,15 @@ public class AlarmReceiver extends BroadcastReceiver {
                 if (FIRE.equals(a)) {
                     Sched.process(c);
                 } else if (RING.equals(a)) {
-                    AlarmService.start(c, in.getStringExtra("id"), in.getStringExtra("occ"), in.getStringExtra("label"));
+                    String id = in.getStringExtra("id"), occ = in.getStringExtra("occ"), label = in.getStringExtra("label");
+                    if (!in.hasExtra("at")) {
+                        // snooze or the test button: just ring
+                        AlarmService.start(c, id, occ, label);
+                    } else {
+                        // the scheduled wake-up alarm: ring first (while Android allows it), then the rest
+                        if (Sched.stillDue(c, id, occ) && Sched.claim(c, id, occ)) Sched.ring(c, id, occ, label);
+                        Sched.process(c);
+                    }
                 } else if (ACT.equals(a)) {
                     String what = in.getStringExtra("what");
                     String id = in.getStringExtra("ref");
