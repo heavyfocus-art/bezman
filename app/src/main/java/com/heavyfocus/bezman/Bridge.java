@@ -34,7 +34,10 @@ public class Bridge {
                 "code", Store.code(c), "lastSync", Store.getLong(c, "lastSync"),
                 "ringtone", Store.getStr(c, "ringtoneName"),
                 "unlocked", Pin.unlocked(c), "pinSet", Pin.exists(c),
-                "live", Store.p(c).getBoolean("live", true));
+                "live", Store.p(c).getBoolean("live", true),
+                "latest", Store.getStr(c, "latestVer"), "syncErr", Store.getStr(c, "syncErr"),
+                "sendOk", Store.getLong(c, "lastSendOk"), "recvOk", Store.getLong(c, "lastRecvOk"),
+                "outbox", Store.outbox(c).size());
         if (Store.isChild(c)) {
             U.put(me, "kid", Store.myKid(c));
             U.put(me, "theme", Store.myTheme(c));

@@ -460,7 +460,7 @@ function hero(title, sub) {
   const ls = S.me.lastSync ? Math.round((Date.now() - S.me.lastSync) / 60000) : null;
   return `<div class="hero">
     <div class="top"><div><h1>${title}</h1><div class="date">${sub}</div></div>
-    <div style="display:flex;gap:6px">${!isChild() ? '<button class="sync" data-design="1" aria-label="עיצוב">🎨</button>' : ''}<button class="sync" data-sync="1">🔄 ${ls == null ? 'סנכרון' : ls < 1 ? 'עכשיו' : 'לפני ' + ls + ' דק׳'}</button></div></div>
+    <div style="display:flex;gap:6px">${!isChild() ? '<button class="sync" data-design="1" aria-label="עיצוב">🎨</button>' : ''}<button class="sync" data-sync="1">${S.me.syncErr ? '⚠️' : '🔄'} ${ls == null ? 'סנכרון' : ls < 1 ? 'עכשיו' : 'לפני ' + ls + ' דק׳'}</button></div></div>
     <div class="chips">
       <div class="chip"><b>\u200E${sc.pts}</b><span>⭐ נקודות</span></div>
       <div class="chip"><b>${sc.streak}</b><span>🔥 ימים ברצף</span></div>
@@ -469,6 +469,47 @@ function hero(title, sub) {
 }
 function dateLine() {
   return new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+/** "1.12" -> 1012, for comparing versions. */
+const verNum = v => { const m = /^(\d+)\.(\d+)/.exec(v || ''); return m ? (+m[1]) * 1000 + (+m[2]) : 0; };
+function newestVer() {
+  let best = S.version || '';
+  [S.me.latest].concat(list('device').map(d => d.ver)).forEach(v => { if (verNum(v) > verNum(best)) best = v; });
+  return best;
+}
+function updateBanner() {
+  const nv = newestVer();
+  if (verNum(nv) <= verNum(S.version)) return '';
+  return `<div class="banner" style="background:var(--sun-soft);color:#6b4b00"><div style="flex:1">📥 יש גרסה חדשה ${esc(nv)} (בטלפון הזה ${esc(S.version)})</div>
+    <button class="btn small" data-update="1">לעדכן</button></div>`;
+}
+const agoTxt = t => { if (!t) return 'אף פעם'; const m = Math.round((Date.now() - t) / 60000);
+  return m < 1 ? 'עכשיו' : m < 60 ? `לפני ${m} דק׳` : m < 1440 ? `לפני ${Math.round(m / 60)} שע׳` : `לפני ${Math.round(m / 1440)} ימים`; };
+function syncStatus() {
+  const e = S.me.syncErr || '';
+  const err = e === '429' ? '⚠️ שרת ההודעות ביקש להאט (הרבה הודעות בבת אחת, למשל אחרי התקנות מחדש). מנסה שוב לבד תוך כמה דקות.'
+    : e === 'net' ? '⚠️ אין חיבור לאינטרנט – ינסה שוב כשיהיה' : e ? '⚠️ תקלה בסנכרון (' + esc(e) + ') – ינסה שוב לבד' : '';
+  return `<div class="small"><b>${err ? err : '✅ הסנכרון תקין'}</b></div>
+    <div class="small muted" style="margin-top:4px">שליחה אחרונה: ${agoTxt(S.me.sendOk)} · קבלה אחרונה: ${agoTxt(S.me.recvOk)}${S.me.outbox ? ` · <b style="color:var(--red)">${S.me.outbox} שינויים מחכים לשליחה</b>` : ''}</div>`;
+}
+/** Every phone in the family: version, where it was installed from, last sync. */
+function phonesCard() {
+  const nv = newestVer();
+  const ds = list('device').filter(d => Date.now() - (d.seen || 0) < 30 * 86400000)
+    .sort((a, b) => (a.role === b.role ? 0 : a.role === 'parent' ? -1 : 1) || String(a.name).localeCompare(String(b.name)));
+  const rows = ds.map(d => {
+    const old = verNum(d.ver) < verNum(nv);
+    const stale = Date.now() - (d.seen || 0) > 24 * 3600000;
+    const me = d.id === 'dv:' + S.me.dev;
+    return `<div class="row"><div class="ico ${d.role === 'parent' ? 'task' : 'alarm'}">${d.role === 'parent' ? '👨‍👩‍👧' : '🧒'}</div>
+      <div class="body"><div class="t1">${esc(d.name)}${me ? ' <span class="small muted">(הטלפון הזה)</span>' : ''}</div>
+      <div class="t2">גרסה ${esc(d.ver)} · ${d.src === 'play' ? 'מ-Google Play' : 'מקובץ התקנה'} · סונכרן ${agoTxt(d.seen)}</div></div>
+      ${old ? '<span class="pill warn">צריך לעדכן</span>' : stale ? '<span class="pill sun">לא סונכרן יום+</span>' : '<span class="pill ok">✓</span>'}</div>`;
+  }).join('');
+  return `<div class="sec-title"><h2>📱 הטלפונים במשפחה</h2></div>
+    <div class="card">${rows || '<div class="empty small">עוד אין נתונים</div>'}
+      <div class="small muted" style="margin-top:8px">טלפון שלא מופיע כאן מריץ גרסה ישנה (לפני ${esc(S.version)}) – צריך לעדכן אותו. הגרסה הכי חדשה: ${esc(nv)}</div></div>`;
 }
 
 function permBanner() {
@@ -498,7 +539,7 @@ function childToday() {
   }
   const noAlarm = !mine('alarm').length;
   return hero(`${greet}, ${esc(S.me.name)} 👋`, dateLine()) + `<main>
-    ${permBanner()}
+    ${updateBanner()}${permBanner()}
     ${next}
     ${noAlarm ? `<div class="card center"><div style="font-size:34px">⏰</div><b>עוד אין שעון מעורר</b><p class="muted small">קובעים שעה, והשעון יצלצל עד שפותרים תרגיל קטן</p><button class="btn" data-new="alarm">לקבוע שעון מעורר</button></div>` : ''}
     <div class="sec-title"><h2>היום שלי</h2><button class="add" data-new="task">+ משימה</button></div>
@@ -533,7 +574,7 @@ function parentToday() {
   const pending = mine('redeem').filter(r => r.status === 'pending');
   const gifts = `<button class="btn ghost block" data-new="gift">${kidInfo().theme === 'yb' ? '💛' : '💜'} לתת בונוס / מילה טובה ל${esc(kid)}</button>`;
   return hero(`${esc(kid)} היום`, dateLine()) + `<main>
-    ${permBanner()}
+    ${updateBanner()}${permBanner()}
     ${!S.me.pinSet ? `<div class="banner" style="background:var(--sun-soft);color:#6b4b00"><div style="flex:1">🔒 כדאי לקבוע קוד הורים – כדי שאף ילד לא יוכל להתחבר כהורה ולאשר לעצמו משימות</div><button class="btn small" data-setpin="1">לקבוע</button></div>` : ''}
     ${!joined ? `<div class="card"><b>📲 אף ילד עוד לא מחובר</b><p class="muted small">מתקינים את האפליקציה בטלפון של הילד/ה, בוחרים "אני ילד/ה" ומקלידים את קוד המשפחה.</p><button class="btn block" data-share="1">שליחת הקוד בוואטסאפ</button></div>` : ''}
     ${parentSections({
@@ -689,9 +730,11 @@ function settingsScreen() {
       <button class="toggle ${S.me.live ? 'on' : ''}" data-live="1"></button></div></div>
 
     <div class="sec-title"><h2>🔄 סנכרון</h2></div>
-    <div class="card"><div class="small muted">סנכרון אחרון: ${ls}</div>
+    <div class="card">${syncStatus()}
       <div class="actions" style="margin-top:10px"><button class="btn ghost" data-sync="1">לסנכרן עכשיו</button><button class="btn light" data-update="1">📥 ${S.fromPlay ? 'עדכון ב-Play' : 'עדכון גרסה'}</button></div>
     </div>
+
+    ${phonesCard()}
 
     ${!child ? `<div class="sec-title"><h2>▶️ Google Play</h2></div>
     <div class="card"><div class="small muted">${(item('cfg') || {}).playLink ? 'קישור ההצטרפות שמור – הוא נשלח עם קוד המשפחה' : 'אחרי שהאפליקציה עולה לבדיקה פנימית ב-Play, מדביקים כאן את קישור ההצטרפות'}</div>
@@ -935,11 +978,8 @@ function bindCommon() {
 }
 
 function shareCode() {
-  const cfg = item('cfg');
-  const link = cfg && cfg.playLink;
-  const txt = link
-    ? `⏰ הצטרפות לאפליקציה "בזמן"\n\n1. פותחים את הקישור (בחשבון Google שנתתם לי):\n${link}\n\n2. לוחצים "הצטרפות כבודק/ת", ואז "הורדה מ-Google Play" ומתקינים\n\n3. פותחים, בוחרים הורה או ילד/ה, ובוחרים "יש לי קוד"\n\n4. קוד המשפחה: ${fmtCode(S.me.code)}`
-    : `⏰ הצטרפות לאפליקציה "בזמן"\n\n1. מורידים ומתקינים:\n${S.apk}\n\n2. פותחים, בוחרים הורה או ילד/ה, ובוחרים "יש לי קוד"\n\n3. קוד המשפחה: ${fmtCode(S.me.code)}`;
+  // Always the direct install link: it always has the newest version (Play can lag behind for some phones)
+  const txt = `⏰ הצטרפות לאפליקציה "בזמן"\n\n1. אם "בזמן" כבר מותקנת מ-Google Play – קודם מסירים אותה\n\n2. מורידים ומתקינים (הגרסה הכי חדשה):\n${S.apk}\n\n3. פותחים, בוחרים הורה או ילד/ה, ובוחרים "יש לי קוד"\n\n4. קוד המשפחה: ${fmtCode(S.me.code)}\n(ילד/ה: לכתוב בדיוק את אותו השם כמו קודם)`;
   B.share(txt);
 }
 

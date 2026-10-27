@@ -22,6 +22,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -39,7 +41,10 @@ public final class Sync {
     static final String BASE = "https://ntfy.sh/";
     static final int MAX_MSG = 3200;
     static final ExecutorService EX = Executors.newSingleThreadExecutor();
+    static final ScheduledExecutorService LATER = Executors.newSingleThreadScheduledExecutor();
     static final SecureRandom RND = new SecureRandom();
+    /** Last problem talking to the relay ("" = none): shown in the settings. */
+    static volatile String lastErr = "";
 
     // ---------- crypto ----------
     static byte[] sha(String s) throws Exception {
@@ -112,7 +117,11 @@ public final class Sync {
     }
 
     // ---------- network ----------
+    /** The relay asked us to slow down (HTTP 429): wait before sending again. */
+    static volatile long waitUntil = 0;
+
     static boolean post(String topic, String body) {
+        if (System.currentTimeMillis() < waitUntil) return false;
         HttpURLConnection con = null;
         try {
             con = (HttpURLConnection) new URL(BASE + topic).openConnection();
@@ -127,8 +136,15 @@ public final class Sync {
             os.write(b);
             os.close();
             int code = con.getResponseCode();
+            if (code == 429) {
+                waitUntil = System.currentTimeMillis() + 90_000;
+                lastErr = "429";
+            } else if (code < 200 || code >= 300) {
+                lastErr = "http " + code;
+            }
             return code >= 200 && code < 300;
         } catch (Exception e) {
+            lastErr = "net";
             return false;
         } finally {
             if (con != null) con.disconnect();
@@ -173,6 +189,7 @@ public final class Sync {
         try {
             if (publishItems(code, items, "BZ1:")) {
                 Store.removeOutbox(c, ids);
+                Store.setLong(c, "lastSendOk", System.currentTimeMillis());
                 return true;
             }
         } catch (Exception ignored) {
@@ -207,6 +224,11 @@ public final class Sync {
 
     /** Reads new messages from the family channel and merges them. */
     static List<JSONObject[]> poll(Context c, boolean[] wantSnap) {
+        return poll(c, wantSnap, new long[1]);
+    }
+
+    /** reqAt[0]: time of the newest join request that no snapshot has answered yet. */
+    static List<JSONObject[]> poll(Context c, boolean[] wantSnap, long[] reqAt) {
         List<JSONObject[]> changes = new ArrayList<>();
         String code = Store.code(c);
         if (code.isEmpty()) return changes;
@@ -217,7 +239,11 @@ public final class Sync {
             con = (HttpURLConnection) new URL(BASE + topic(code) + "/json?poll=1&since=" + since).openConnection();
             con.setConnectTimeout(15000);
             con.setReadTimeout(20000);
-            if (con.getResponseCode() != 200) return changes;
+            int rc = con.getResponseCode();
+            if (rc != 200) {
+                lastErr = rc == 429 ? "429" : "http " + rc;
+                return changes;
+            }
             InputStream is = con.getInputStream();
             BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
             String line, lastId = null;
@@ -237,7 +263,10 @@ public final class Sync {
                 String msg = m.optString("message", "");
                 String data = null;
                 if (msg.startsWith("BZ1R:")) {
-                    if (!msg.substring(5).equals(me) && time > lastSnap) wantSnap[0] = true;
+                    if (!msg.substring(5).equals(me) && time > lastSnap) {
+                        wantSnap[0] = true;
+                        reqAt[0] = Math.max(reqAt[0], time);
+                    }
                     continue;
                 } else if (msg.startsWith("BZ1S:")) {
                     data = decrypt(code, msg.substring(5));
@@ -254,24 +283,44 @@ public final class Sync {
             br.close();
             if (lastId != null) Store.setStr(c, "lastMsgId", lastId);
             Store.setLong(c, "lastSnapAt", lastSnap);
-        } catch (Exception ignored) {
+            Store.setLong(c, "lastRecvOk", System.currentTimeMillis());
+        } catch (Exception e) {
+            lastErr = "net";
         } finally {
             if (con != null) con.disconnect();
         }
         return changes;
     }
 
+    static synchronized void answerJoin(Context c, long req) {
+        react(c, poll(c, new boolean[1], new long[1]));
+        if (Store.getLong(c, "lastSnapAt") < req) snapshot(c);
+    }
+
+    static void react(Context c, List<JSONObject[]> changes) {
+        if (changes.isEmpty()) return;
+        Notify.onRemote(c, changes);
+        Store.recomputeScore(c);
+        Sched.reschedule(c);
+        MainActivity.refreshUi();
+        Widgets.updateAll(c);
+    }
+
     /** Full sync round: send, receive, react, and share a full copy now and then. */
     public static synchronized void syncNow(Context c) {
         if (Store.code(c).isEmpty()) return;
+        lastErr = "";
         flush(c);
         boolean[] wantSnap = {false};
-        List<JSONObject[]> changes = poll(c, wantSnap);
-        if (!changes.isEmpty()) {
-            Notify.onRemote(c, changes);
-            Store.recomputeScore(c);
-            Sched.reschedule(c);
-            MainActivity.refreshUi();
+        long[] reqAt = {0};
+        react(c, poll(c, wantSnap, reqAt));
+        if (wantSnap[0]) {
+            // A phone (re)joined and asked for a full copy. Every phone hears it: wait a random moment and
+            // answer only if nobody else did, so the relay doesn't get the same copy from every phone.
+            final Context ac = c.getApplicationContext();
+            final long req = reqAt[0];
+            LATER.schedule(() -> EX.execute(() -> answerJoin(ac, req)), 3000 + RND.nextInt(25_000), TimeUnit.MILLISECONDS);
+            wantSnap[0] = false;
         }
         if (Store.p(c).getBoolean("needJoin", false)) {
             try {
@@ -287,9 +336,16 @@ public final class Sync {
         } catch (Exception ignored) {
         }
         long since = System.currentTimeMillis() - Store.getLong(c, "lastSnapAt");
-        if (wantSnap[0] || since > 6 * U.HOUR) snapshot(c);
+        // ntfy keeps messages 12 hours: a full copy about every 10 hours (by any phone) lets a phone that was off catch up
+        if (wantSnap[0] || since > 10 * U.HOUR) snapshot(c);
+        try {
+            Store.touchMe(c);
+            Store.checkLatest(c);
+        } catch (Exception ignored) {
+        }
         flush(c);
-        Store.setLong(c, "lastSync", System.currentTimeMillis());
+        if (lastErr.isEmpty()) Store.setLong(c, "lastSync", System.currentTimeMillis());
+        Store.setStr(c, "syncErr", lastErr);
         MainActivity.refreshUi();
         Widgets.updateAll(c);
     }

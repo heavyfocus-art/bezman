@@ -198,6 +198,51 @@ public final class Store {
         }
     }
 
+    // ---------- which phones are in the family (version, where it was installed from, last sync) ----------
+    /** This phone's line in the family's phone list (item "dv:<device>"), refreshed about every 6 hours. */
+    static void touchMe(Context c) {
+        if (code(c).isEmpty() || role(c).isEmpty()) return;
+        String id = "dv:" + dev(c);
+        JSONObject old = items(c).optJSONObject(id);
+        String ver = BuildConfig.VERSION_NAME;
+        String src = Bridge.fromPlay(c) ? "play" : "apk";
+        long now = System.currentTimeMillis();
+        if (U.alive(old) && ver.equals(old.optString("ver")) && src.equals(old.optString("src"))
+                && name(c).equals(old.optString("name")) && now - old.optLong("seen") < 6 * U.HOUR) return;
+        JSONObject d = U.obj("id", id, "kind", "device", "name", name(c), "role", role(c),
+                "ver", ver, "src", src, "seen", now, "model", android.os.Build.MODEL,
+                "sdk", android.os.Build.VERSION.SDK_INT);
+        if (isChild(c)) U.put(d, "kid", myKid(c));
+        upsertLocal(c, d);
+    }
+
+    /** The newest version on GitHub (checked at most every 6 hours), e.g. "1.12". */
+    static void checkLatest(Context c) {
+        long now = System.currentTimeMillis();
+        if (now - getLong(c, "latestAt") < 6 * U.HOUR) return;
+        setLong(c, "latestAt", now);
+        java.net.HttpURLConnection con = null;
+        try {
+            con = (java.net.HttpURLConnection) new java.net.URL(
+                    "https://api.github.com/repos/heavyfocus-art/bezman/releases/latest").openConnection();
+            con.setConnectTimeout(10000);
+            con.setReadTimeout(10000);
+            con.setRequestProperty("Accept", "application/vnd.github+json");
+            if (con.getResponseCode() != 200) return;
+            java.io.InputStream is = con.getInputStream();
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = is.read(buf)) > 0 && bo.size() < 400_000) bo.write(buf, 0, n);
+            String tag = new JSONObject(bo.toString("UTF-8")).optString("tag_name", "");
+            if (tag.startsWith("v")) tag = tag.substring(1);
+            if (!tag.isEmpty()) setStr(c, "latestVer", tag);
+        } catch (Exception ignored) {
+        } finally {
+            if (con != null) con.disconnect();
+        }
+    }
+
     // ---------- setup ----------
     public static void setup(Context c, String role, String name, String code) {
         setup(c, role, name, code, "f", "purple");
