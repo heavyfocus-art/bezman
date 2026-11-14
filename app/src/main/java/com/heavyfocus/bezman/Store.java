@@ -113,21 +113,27 @@ public final class Store {
         List<JSONObject[]> changed = new ArrayList<>();
         synchronized (LOCK) {
             JSONObject all = items(c);
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject in = arr.optJSONObject(i);
-                if (in == null) continue;
-                String id = in.optString("id", "");
-                if (id.isEmpty()) continue;
-                JSONObject old = all.optJSONObject(id);
-                boolean take;
-                if (old == null) take = true;
-                else {
-                    long a = in.optLong("upd"), b = old.optLong("upd");
-                    take = a > b || (a == b && in.toString().compareTo(old.toString()) > 0);
-                }
-                if (take) {
-                    U.put(all, id, in);
-                    changed.add(new JSONObject[]{old, in});
+            // members first, so we know who wrote the rest (a parent's or a child's phone)
+            for (int pass = 0; pass < 2; pass++) {
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject in = arr.optJSONObject(i);
+                    if (in == null) continue;
+                    if (("member".equals(in.optString("kind"))) != (pass == 0)) continue;
+                    String id = in.optString("id", "");
+                    if (id.isEmpty()) continue;
+                    JSONObject old = all.optJSONObject(id);
+                    boolean take;
+                    if (old == null) take = true;
+                    else {
+                        long a = in.optLong("upd"), b = old.optLong("upd");
+                        take = a > b || (a == b && in.toString().compareTo(old.toString()) > 0);
+                    }
+                    // a child's phone may not approve, give points, change task points or parent settings
+                    if (take && !Guard.acceptRemote(all, old, in)) take = false;
+                    if (take) {
+                        U.put(all, id, in);
+                        changed.add(new JSONObject[]{old, in});
+                    }
                 }
             }
             if (!changed.isEmpty()) saveItems(c, all);
@@ -348,8 +354,13 @@ public final class Store {
         return m != null && "m".equals(m.optString("gender"));
     }
 
+    /** The kids' designs (same list as THEMES in the screens). */
+    static final String[] THEMES = {"purple", "orange", "yb", "quest", "questyb", "stickers", "neon", "neonyb",
+            "map", "pet", "space", "hero", "league"};
+
     static String okTheme(String t) {
-        return "yb".equals(t) || "orange".equals(t) ? t : "purple";
+        for (String x : THEMES) if (x.equals(t)) return t;
+        return "purple";
     }
 
     /** My colors: what I chose, unless a parent chose newer colors for me ("kt:<kid>"). */
@@ -467,11 +478,13 @@ public final class Store {
         int m = U.mins(t.optString("time"));
         long due = U.at(occ, m < 0 ? 23 * 60 + 59 : m);
         boolean onTime = System.currentTimeMillis() <= due;
-        int claim = onTime ? base : Math.max(1, base / 2);
+        // late: no points by itself – a parent decides whether to give or take points, and how many
+        int claim = onTime ? base : 0;
         JSONObject l = log(c, id, "task_done", taskId, occ, 0, t.optString("title"));
         U.put(l, "status", "pending");
         U.put(l, "claim", claim);
         U.put(l, "late", !onTime);
+        if (!onTime) U.put(l, "lateMin", (int) Math.max(1, (System.currentTimeMillis() - due) / U.MIN));
         U.put(l, "by", name(c));
         if (onTime) celebrate(c);
         if (withPhoto) {
@@ -499,16 +512,47 @@ public final class Store {
         return pen;
     }
 
-    /** A parent approves (ok=true) or sends back (ok=false) a task she marked done. */
+    /** A parent approves (ok=true) or sends back (ok=false) a task she marked done, with the points she asked for. */
     public static boolean approve(Context c, String logId, boolean ok) {
+        return decide(c, logId, ok, NO_PTS);
+    }
+
+    static final int NO_PTS = Integer.MIN_VALUE;
+    static final int MAX_PTS = 999;
+
+    /**
+     * A parent decides on a task she marked done.
+     * ok: approved with pts points (any whole number: more, less, 0, or minus to take points off;
+     * NO_PTS = the points she asked for). !ok: sent back to do again, no points.
+     */
+    public static boolean decide(Context c, String logId, boolean ok, int pts) {
         if (isChild(c) || !Pin.unlocked(c)) return false;
         JSONObject r = get(c, logId);
         if (!U.alive(r) || !"task_done".equals(r.optString("type"))) return false;
         if (!"pending".equals(r.optString("status"))) return false;
+        int give = pts == NO_PTS ? r.optInt("claim", 0) : Math.max(-MAX_PTS, Math.min(MAX_PTS, pts));
         U.put(r, "status", ok ? "approved" : "rejected");
-        U.put(r, "pts", ok ? r.optInt("claim", 0) : 0);
+        U.put(r, "pts", ok ? give : 0);
         U.put(r, "approvedBy", name(c));
         U.put(r, "decidedAt", System.currentTimeMillis());
+        upsertLocal(c, r);
+        afterLocalChange(c);
+        return true;
+    }
+
+    /** A parent changes the points of a task that was already decided (approved or not done). */
+    public static boolean adjust(Context c, String logId, int pts) {
+        if (isChild(c) || !Pin.unlocked(c)) return false;
+        JSONObject r = get(c, logId);
+        if (!U.alive(r)) return false;
+        String type = r.optString("type");
+        boolean decided = ("task_done".equals(type) && "approved".equals(r.optString("status"))) || "task_missed".equals(type);
+        if (!decided) return false;
+        int v = Math.max(-MAX_PTS, Math.min(MAX_PTS, pts));
+        if (!r.has("orig")) U.put(r, "orig", r.optInt("pts", 0));
+        U.put(r, "pts", v);
+        U.put(r, "adjBy", name(c));
+        U.put(r, "adjAt", System.currentTimeMillis());
         upsertLocal(c, r);
         afterLocalChange(c);
         return true;

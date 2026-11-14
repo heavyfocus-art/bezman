@@ -32,9 +32,13 @@
     if (!old || old.pts !== pts) put({ id: 'score:' + me, kind: 'score', kid: me, pts, streak: old ? old.streak || 0 : 0 });
   };
   let CEL = 0;
+  let SESSION = false;
   const state = () => {
     const m = D.items['m_' + D.me.dev] || {};
-    const me = Object.assign({ lastSync: Date.now() - 4 * 60000, unlocked: true }, D.me, { pinSet: !!(D.items.pin && D.items.pin.hash) }, D.me.role === 'child' ? { kid: myKid(), theme: m.theme || 'purple', gender: m.gender || 'f' } : {});
+    const pinSet = !!(D.items.pin && D.items.pin.hash);
+    const lockOn = D.me.lockOn !== false;
+    const session = D.me.role === 'child' || !pinSet || !lockOn || !!SESSION;
+    const me = Object.assign({ lastSync: Date.now() - 4 * 60000, unlocked: true }, D.me, { pinSet, lockOn, session, lockMin: D.me.lockMin || 1, bio: !!D.me.bio, bioAvail: true, pinWait: 0 }, D.me.role === 'child' ? { kid: myKid(), theme: m.theme || 'purple', gender: m.gender || 'f' } : {});
     const c = CEL; CEL = 0;
     return JSON.stringify({ items: D.items, me, version: '1.0-test', apk: 'https://example.com/bezman.apk', now: Date.now(), celebrate: !!c });
   };
@@ -56,6 +60,22 @@
     },
     newCode() { const a = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 10; i++) s += a[Math.floor(Math.random() * a.length)]; return s; },
     syncNow() {},
+    decide(id, ok, pts) {
+      const l = D.items[id]; if (!l || l.status !== 'pending') return false;
+      put(Object.assign({}, l, { status: ok ? 'approved' : 'rejected', pts: ok ? pts : 0, approvedBy: D.me.name, decidedAt: Date.now() }));
+      score(); persist(); return true;
+    },
+    adjust(id, pts) {
+      const l = D.items[id]; if (!l) return false;
+      put(Object.assign({}, l, { orig: l.orig != null ? l.orig : l.pts, pts, adjBy: D.me.name, adjAt: Date.now() }));
+      score(); persist(); return true;
+    },
+    setLock(on, m) { D.me.lockOn = on; D.me.lockMin = m; persist(); return true; },
+    setBio(on) { D.me.bio = on; persist(); return true; },
+    lockNow() { SESSION = false; },
+    bio() { setTimeout(() => { SESSION = true; window.onNative(); }, 400); },
+    pinWait() { return 0; },
+    pinWeak() { return false; },
     action(what, ref, occ) {
       if (what === 'approve' || what === 'reject') {
         const l = D.items[ref]; if (!l || l.status !== 'pending') return -1;
@@ -75,9 +95,9 @@
         const id = `task:${ref}:${occ}`; const ex = D.items[id];
         if (ex && !ex.del && ex.status !== 'rejected') return -1;
         const due = at(occ, mins(it.time) >= 0 ? mins(it.time) : 1439); const base = it.pts || 5;
-        const claim = Date.now() <= due ? base : Math.max(1, Math.floor(base / 2));
+        const claim = Date.now() <= due ? base : 0;
         if (Date.now() <= due) CEL = 1;
-        put({ id, kind: 'log', kid: myKid(), type: 'task_done', status: 'pending', claim, ref, occ, pts: 0, title: it.title, at: Date.now(), late: Date.now() > due, photo: what === 'photo', by: D.me.name });
+        put({ id, kind: 'log', kid: myKid(), type: 'task_done', status: 'pending', claim, ref, occ, pts: 0, title: it.title, at: Date.now(), late: Date.now() > due, lateMin: Date.now() > due ? Math.max(1, Math.round((Date.now() - due) / 60000)) : undefined, photo: what === 'photo', by: D.me.name });
         score(); persist(); return claim;
       }
       if (what === 'missed') {
@@ -102,9 +122,9 @@
     setPrefs(j) { localStorage.setItem('bz-ui', j); },
     setTextZoom(z) { document.body.style.zoom = z / 100; },
     voice() { setTimeout(() => window.onVoice(window.__nextVoice || 'לסדר את החדר מחר עד 8 בערב'), 100); },
-    setPin(n, o) { const p = D.items.pin; if (p && p.hash !== 'h' + o) return false; put({ id: 'pin', kind: 'config', salt: 's', hash: 'h' + n }); persist(); return true; },
+    setPin(n, o) { const p = D.items.pin; if (p && p.hash !== 'h' + o) return false; put({ id: 'pin', kind: 'config', salt: 's', hash: 'h' + n }); SESSION = true; persist(); return true; },
     checkPin(n) { const p = D.items.pin; return !!p && p.hash === 'h' + n; },
-    unlockPin(n) { if (!this.checkPin(n)) return false; D.me.unlocked = true; persist(); return true; },
+    unlockPin(n) { if (!this.checkPin(n)) return false; D.me.unlocked = true; SESSION = true; persist(); return true; },
     lockParent() { D.me.unlocked = false; persist(); },
     testAlarm() { console.log('test alarm'); },
     toast(s) { console.log('toast', s); },

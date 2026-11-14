@@ -134,6 +134,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         current = new WeakReference<>(this);
+        Pin.back(this); // app lock: away too long → ask for the PIN again
         Sync.syncAsync(this);
         LiveService.start(this);
         refreshUi();
@@ -142,7 +143,58 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        Pin.away();
         if (current.get() == this) current = new WeakReference<>(null);
+    }
+
+    // ---------- fingerprint / face for the app lock ----------
+    boolean bioBusy = false;
+
+    /** Can this phone open the app with a fingerprint / face? */
+    boolean bioAvailable() {
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.hardware.biometrics.BiometricManager bm = getSystemService(android.hardware.biometrics.BiometricManager.class);
+                return bm != null && bm.canAuthenticate(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                        == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS;
+            }
+            if (Build.VERSION.SDK_INT == 29) {
+                android.hardware.biometrics.BiometricManager bm = getSystemService(android.hardware.biometrics.BiometricManager.class);
+                return bm != null && bm.canAuthenticate() == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS;
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
+    }
+
+    void askBio() {
+        if (bioBusy || !bioAvailable() || Build.VERSION.SDK_INT < 29) return;
+        bioBusy = true;
+        try {
+            java.util.concurrent.Executor ex = getMainExecutor();
+            android.hardware.biometrics.BiometricPrompt p = new android.hardware.biometrics.BiometricPrompt.Builder(this)
+                    .setTitle("כניסה ל״בזמן״")
+                    .setSubtitle("מסך ההורים")
+                    .setConfirmationRequired(false)
+                    .setNegativeButton("קוד הורים", ex, (d, w) -> bioBusy = false)
+                    .build();
+            p.authenticate(new android.os.CancellationSignal(), ex,
+                    new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                        @Override
+                        public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult r) {
+                            bioBusy = false;
+                            Pin.openSessionBio();
+                            refreshUi();
+                        }
+
+                        @Override
+                        public void onAuthenticationError(int code, CharSequence msg) {
+                            bioBusy = false;
+                        }
+                    });
+        } catch (Exception e) {
+            bioBusy = false;
+        }
     }
 
     static final int REQ_RINGTONE = 11, REQ_SONG = 12, REQ_PHOTO = 13, REQ_VOICE = 14;

@@ -51,9 +51,10 @@ public class AlarmReceiver extends BroadcastReceiver {
                         if (pts > 0) Notify.praise(c, key, pts, "יצאת! 🚀");
                     } else if ("task".equals(what)) {
                         pts = Store.taskDone(c, id, occ, false);
-                        if (pts > 0) Notify.sent(c, key);
+                        if (pts >= 0) Notify.sent(c, key);
                     } else if ("approve".equals(what) || "reject".equals(what)) {
-                        Store.approve(c, id, "approve".equals(what));
+                        // with the app lock on, approving needs the app (and the PIN)
+                        if (!Pin.lockApplies(c)) Store.approve(c, id, "approve".equals(what));
                     }
                     Sync.flush(c);
                 } else {

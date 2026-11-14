@@ -99,7 +99,7 @@ public class AlarmActivity extends Activity {
         root.setLayoutDirection(View.LAYOUT_DIRECTION_RTL);
         root.setPadding(dp(24), dp(48), dp(24), dp(24));
         String theme = Store.myTheme(this);
-        yb = "yb".equals(theme);
+        yb = Widgets.ybLike(theme);
         boolean orange = "orange".equals(theme);
         GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 yb ? new int[]{0xFF000000, 0xFF161616, 0xFF3D3300}

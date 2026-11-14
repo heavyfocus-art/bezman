@@ -181,16 +181,30 @@ public final class Widgets {
 
     // ------------------------------------------------------------------ looks
 
+    /** The kids' designs that are yellow & black. */
+    static boolean ybLike(String theme) {
+        return "yb".equals(theme) || "questyb".equals(theme) || "neonyb".equals(theme) || "league".equals(theme);
+    }
+
     static int bgFor(String theme) {
-        if ("yb".equals(theme)) return R.drawable.wg_bg_yb;
+        if (ybLike(theme)) return R.drawable.wg_bg_yb;
         if ("orange".equals(theme)) return R.drawable.wg_bg_orange;
         return R.drawable.wg_bg_purple;
     }
 
     static int kidColor(String theme) {
-        if ("yb".equals(theme)) return 0xFFC79A00;
-        if ("orange".equals(theme)) return 0xFFE2650F;
-        return 0xFF7A5AF5;
+        if (ybLike(theme)) return 0xFFC79A00;
+        switch (theme == null ? "" : theme) {
+            case "orange": return 0xFFE2650F;
+            case "quest": return 0xFF2E8BFF;
+            case "stickers": return 0xFFE06A90;
+            case "neon": return 0xFFE040C0;
+            case "map": return 0xFF3E8F49;
+            case "pet": return 0xFF8B63F2;
+            case "space": return 0xFF2E7FD0;
+            case "hero": return 0xFFC99A2E;
+            default: return 0xFF7A5AF5;
+        }
     }
 
     static PendingIntent openApp(Context c) {
@@ -344,7 +358,7 @@ public final class Widgets {
             int[] sc = score(all, k.kid, legacy);
             RemoteViews line = new RemoteViews(c.getPackageName(), R.layout.widget_kid);
             line.setTextViewText(R.id.kname, "● " + k.name);
-            line.setTextColor(R.id.kname, "yb".equals(k.theme) ? 0xFFFFD200 : Color.WHITE);
+            line.setTextColor(R.id.kname, ybLike(k.theme) ? 0xFFFFD200 : Color.WHITE);
             line.setTextViewText(R.id.kinfo, "⭐ ‎" + sc[0] + (tasks > 0 ? " · ✓ " + done + "/" + tasks : "")
                     + (nextTxt.isEmpty() ? "" : "\nהבא: " + nextTxt));
             line.setTextColor(R.id.kinfo, 0xE6FFFFFF);

@@ -179,8 +179,11 @@ public final class Notify {
         }
     }
 
-    /** Parent notification with "approve" / "not approved" buttons for a task she marked done. */
-    static void approval(Context c, String logId, String key, String title, String text) {
+    /**
+     * Parent notification for a task she marked done. On time: "approve" / "not approved" buttons.
+     * Late, or with the app lock on: no buttons – the parent opens the app and decides on the points.
+     */
+    static void approval(Context c, String logId, String key, String title, String text, boolean buttons) {
         if (!Store.markNotified(c, key)) return;
         Notification.Builder b = new Notification.Builder(c, CH_FAMILY)
                 .setSmallIcon(R.drawable.ic_notif)
@@ -191,7 +194,7 @@ public final class Notify {
                 .setContentIntent(openApp(c))
                 .setAutoCancel(true);
         String nkey = "appr:" + logId;
-        for (int k = 0; k < 2; k++) {
+        for (int k = 0; k < (buttons ? 2 : 0); k++) {
             boolean ok = k == 0;
             Intent i = new Intent(c, AlarmReceiver.class).setAction(AlarmReceiver.ACT)
                     .putExtra("what", ok ? "approve" : "reject").putExtra("ref", logId).putExtra("occ", "")
@@ -244,14 +247,26 @@ public final class Notify {
             boolean sameState = old != null && old.optString("type").equals(type0)
                     && old.optString("status").equals(n.optString("status"));
             if (taskLog) {
-                if (sameState) continue;
                 String st = n.optString("status");
                 int pts = n.optInt("pts");
+                if (sameState) {
+                    // a parent changed the points of a task that was already decided
+                    if (child && old.optInt("pts") != pts && n.has("adjBy")) {
+                        if (pts > old.optInt("pts")) Store.celebrate(c);
+                        family(c, id + ":adj:" + n.optLong("upd"), "✏️ " + n.optString("adjBy", "ההורים") + " עדכן/ה נקודות: " + title,
+                                "עכשיו: \u200E" + (pts > 0 ? "+" : "") + pts + " ⭐");
+                    }
+                    continue;
+                }
                 if (!child) {
                     if ("task_done".equals(type0) && "pending".equals(st)) {
-                        approval(c, id, id + ":p:" + n.optLong("upd"), "📝 " + kid + g.apply(" סימנה", " סימן") + " בוצע: " + title,
-                                (n.optBoolean("photo") ? "📷 עם תמונה · " : "") + "מחכה לאישור שלך ("
-                                        + n.optInt("claim") + " ⭐)");
+                        boolean late = n.optBoolean("late");
+                        approval(c, id, id + ":p:" + n.optLong("upd"),
+                                (late ? "⏰ " : "📝 ") + kid + g.apply(" סימנה", " סימן") + " בוצע" + (late ? " באיחור: " : ": ") + title,
+                                (n.optBoolean("photo") ? "📷 עם תמונה · " : "")
+                                        + (late ? "באיחור אין נקודות אוטומטיות – נכנסים לאפליקציה ומחליטים אם לתת או להוריד, וכמה"
+                                        : "מחכה לאישור שלך (" + n.optInt("claim") + " ⭐)"),
+                                !late && !Pin.lockApplies(c));
                     } else if ("task_missed".equals(type0)) {
                         family(c, id + ":m", "❌ " + kid + (n.optBoolean("auto") ? g.apply(" לא סימנה", " לא סימן") + " עד סוף היום: "
                                 : g.apply(" סימנה", " סימן") + " לא בוצע: ") + title, "\u200E" + pts + " ⭐");
@@ -259,8 +274,9 @@ public final class Notify {
                 } else if ("task_done".equals(type0) && old != null) {
                     String who = n.optString("approvedBy", "ההורים");
                     if ("approved".equals(st)) {
-                        Store.celebrate(c);
-                        family(c, id + ":ok:" + n.optLong("upd"), "✅ " + who + " אישר/ה: " + title, "קיבלת \u200E+" + pts + " ⭐ 🎉");
+                        if (pts > 0) Store.celebrate(c);
+                        family(c, id + ":ok:" + n.optLong("upd"), "✅ " + who + " אישר/ה: " + title,
+                                pts > 0 ? "קיבלת \u200E+" + pts + " ⭐ 🎉" : pts == 0 ? "הפעם בלי נקודות" : "ירדו \u200E" + (-pts) + " ⭐");
                     } else if ("rejected".equals(st)) {
                         family(c, id + ":no:" + n.optLong("upd"), "↩️ המשימה לא אושרה: " + title, "אפשר לבצע ולסמן שוב");
                     }

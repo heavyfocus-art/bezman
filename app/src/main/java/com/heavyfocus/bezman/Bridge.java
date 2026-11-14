@@ -38,7 +38,9 @@ public class Bridge {
                 "latest", Store.getStr(c, "latestVer"), "syncErr", Store.getStr(c, "syncErr"),
                 "sendOk", Store.getLong(c, "lastSendOk"), "recvOk", Store.getLong(c, "lastRecvOk"),
                 "outbox", Store.outbox(c).size(), "netTest", Store.getStr(c, "netTest"),
-                "netTestAt", Store.getLong(c, "netTestAt"));
+                "netTestAt", Store.getLong(c, "netTestAt"),
+                "session", Pin.session(c), "lockOn", Pin.lockOn(c), "lockMin", Pin.lockMin(c),
+                "bio", Pin.bioOn(c), "bioAvail", a.bioAvailable(), "pinWait", Pin.waitSec(c));
         if (Store.isChild(c)) {
             U.put(me, "kid", Store.myKid(c));
             U.put(me, "theme", Store.myTheme(c));
@@ -54,14 +56,37 @@ public class Bridge {
 
     @JavascriptInterface
     public String upsert(String json) {
-        if (!Store.isChild(c) && !Pin.unlocked(c)) return state(); // locked parent phone
+        if (!Store.isChild(c) && !Pin.canAct(c)) return state(); // locked parent phone
         try {
             JSONArray arr = json.trim().startsWith("[") ? new JSONArray(json) : new JSONArray().put(new JSONObject(json));
+            if (Store.isChild(c)) arr = childOnly(arr);
+            if (arr.length() == 0) return state();
             Store.upsertLocal(c, arr);
             Store.afterLocalChange(c);
         } catch (Exception ignored) {
         }
         return state();
+    }
+
+    /** On a child's phone: drops changes only parents may make (points, approvals, parent settings). */
+    JSONArray childOnly(JSONArray arr) {
+        JSONObject all = Store.items(c);
+        JSONObject me = all.optJSONObject("m_" + Store.dev(c));
+        JSONArray ok = new JSONArray();
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject it = arr.optJSONObject(i);
+            if (it == null) continue;
+            JSONObject probe;
+            try {
+                probe = new JSONObject(it.toString());
+            } catch (Exception e) {
+                continue;
+            }
+            U.put(probe, "dev", Store.dev(c));
+            if (Guard.childMay(all, me, all.optJSONObject(it.optString("id")), probe)) ok.put(it);
+            else toast("רק ההורים יכולים לשנות את זה 🔒");
+        }
+        return ok;
     }
 
     @JavascriptInterface
@@ -140,6 +165,7 @@ public class Bridge {
                 break;
             case "approve":
             case "reject":
+                if (!Pin.canAct(c)) break;
                 pts = Store.approve(c, ref, "approve".equals(what)) ? 1 : -1;
                 Notify.cancel(c, "appr:" + ref);
                 break;
@@ -147,6 +173,21 @@ public class Bridge {
                 break;
         }
         return pts;
+    }
+
+    /** A parent decides on a task marked done: ok = approve with pts points (may be 0 or minus), !ok = send back. */
+    @JavascriptInterface
+    public boolean decide(String logId, boolean ok, int pts) {
+        if (!Pin.canAct(c)) return false;
+        boolean done = Store.decide(c, logId, ok, pts);
+        if (done) Notify.cancel(c, "appr:" + logId);
+        return done;
+    }
+
+    /** A parent changes the points of a task that was already decided. */
+    @JavascriptInterface
+    public boolean adjust(String logId, int pts) {
+        return Pin.canAct(c) && Store.adjust(c, logId, pts);
     }
 
     @JavascriptInterface
@@ -225,12 +266,50 @@ public class Bridge {
         return Pin.set(c, newPin, oldPin);
     }
 
-    /** Unlocks this parent phone. */
+    /** Unlocks this parent phone (after joining, or the app lock). */
     @JavascriptInterface
     public boolean unlockPin(String pin) {
-        boolean ok = Pin.unlock(c, pin);
+        boolean ok = Pin.unlocked(c) ? Pin.openSession(c, pin) : Pin.unlock(c, pin);
         if (ok) Store.afterLocalChange(c);
         return ok;
+    }
+
+    /** Seconds to wait after too many wrong codes (0 = may try). */
+    @JavascriptInterface
+    public int pinWait() {
+        return Pin.waitSec(c);
+    }
+
+    @JavascriptInterface
+    public boolean pinWeak(String pin) {
+        return Pin.weak(pin == null ? "" : pin.trim());
+    }
+
+    /** App lock on a parent's phone: on/off and after how many minutes away. */
+    @JavascriptInterface
+    public boolean setLock(boolean on, int minutes) {
+        if (!Pin.canAct(c)) return false;
+        Pin.setLock(c, on, minutes);
+        return true;
+    }
+
+    @JavascriptInterface
+    public boolean setBio(boolean on) {
+        if (!Pin.canAct(c)) return false;
+        Pin.setBio(c, on && a.bioAvailable());
+        return true;
+    }
+
+    @JavascriptInterface
+    public void lockNow() {
+        Pin.lockNow();
+        MainActivity.refreshUi();
+    }
+
+    /** Opens the app lock with fingerprint / face (if the parent turned it on). */
+    @JavascriptInterface
+    public void bio() {
+        if (Pin.bioOn(c) && Pin.unlocked(c)) a.runOnUiThread(a::askBio);
     }
 
     /** Only checks (used on a child's phone before leaving the family). */
@@ -377,6 +456,7 @@ public class Bridge {
 
     @JavascriptInterface
     public String reset() {
+        if (!Store.isChild(c) && !Store.role(c).isEmpty() && Pin.unlocked(c) && !Pin.session(c)) return state();
         LiveService.stopIt(c);
         Store.reset(c);
         Sched.reschedule(c);

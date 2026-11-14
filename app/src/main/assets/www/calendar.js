@@ -4,8 +4,7 @@
 
 let CAL = null; // { y, m, day: 'yyyy-mm-dd' | null }
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
-const KID_COLORS = { purple: '#8b6cf6', orange: '#f07a1a', yb: '#e6b800' };
-const kidColor = k => KID_COLORS[k && k.theme] || KID_COLORS.purple;
+const kidColor = k => THEMES[themeOf(k && k.theme)].kc;
 
 function calState() {
   if (!CAL) { const n = new Date(); CAL = { y: n.getFullYear(), m: n.getMonth(), day: null }; }
@@ -62,7 +61,7 @@ function calendarScreen() {
 /** One row in a child's half of the day. */
 function calRow(r, k, now) {
   const it = r.it;
-  const icon = { alarm: '⏰', event: '🎒', task: '📝' }[r.type];
+  const icon = r.type === 'task' && catOf(r.it) ? CATS[catOf(r.it)].e : { alarm: '⏰', event: '🎒', task: '📝' }[r.type];
   let time, title, sub, st = '';
   if (r.type === 'alarm') {
     time = it.time;
@@ -79,8 +78,8 @@ function calRow(r, k, now) {
     title = esc(it.title);
     sub = r.off ? 'לא צריך ביום הזה' : `עד ${esc(it.time || 'סוף היום')} · ${it.pts || 5}⭐${it.photo ? ' · 📷' : ''}`;
     const ts = taskState(r.log);
-    if (ts === 'approved') st = ` <span class="pill ok">✓ אושר</span>`;
-    else if (ts === 'pending') st = ` <span class="pill wait">⏳ מחכה לאישור</span>`;
+    if (ts === 'approved') st = ' ' + ptsPill(r.log.pts, '✓ אושר');
+    else if (ts === 'pending') st = ` <span class="pill wait">⏳ מחכה לאישור</span>${r.log.late ? ' <span class="pill sun">⏰ באיחור</span>' : ''}`;
     else if (ts === 'missed') st = ` <span class="pill warn">✕ לא בוצע</span>`;
     else if (ts === 'rejected') st = ` <span class="pill warn">↩️ הוחזר</span>`;
   }

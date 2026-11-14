@@ -75,9 +75,9 @@ function applyDesign() {
   let zoom = 100;
   if (S && S.me && S.me.role && !isChild()) {
     const p = uiPrefs();
-    if (p.accent === 'yb') document.body.dataset.theme = 'yb';
+    if (p.accent === 'yb') setTheme('yb');
     else if (p.accent !== 'auto' && ACCENTS[p.accent]) {
-      document.body.dataset.theme = 'purple';
+      setTheme('purple');
       const v = ACCENTS[p.accent].v;
       st.setProperty('--violet', v.violet);
       st.setProperty('--violet-soft', v.soft);
@@ -87,19 +87,19 @@ function applyDesign() {
       st.setProperty('--acc-2', v.a2);
       st.setProperty('--hero', `linear-gradient(160deg, ${v.h1} 0%, ${v.h2} 60%, ${v.violet} 100%)`);
     }
-    if (document.body.dataset.theme !== 'yb' && BGS[p.bg]) st.setProperty('--bg', BGS[p.bg].c);
+    // the parent's own background only on light designs
+    if (!TH().yb && !TH().dark && (p.accent !== 'auto' || ['purple', 'orange'].indexOf(document.body.dataset.theme) >= 0) && BGS[p.bg]) st.setProperty('--bg', BGS[p.bg].c);
     zoom = (SIZES[p.size] || SIZES.m).z;
   }
   if (B.setTextZoom) B.setTextZoom(zoom);
   else document.body.style.zoom = zoom / 100;
 }
 function heroColor() {
-  if (document.body.dataset.theme === 'yb') return '#000000';
-  if (S && S.me && !isChild()) {
+  if (S && S.me && S.me.role && !isChild()) {
     const a = ACCENTS[uiPrefs().accent];
-    if (a && a.v) return a.v.h1;
+    if (a && a.v && document.body.dataset.theme === 'purple') return a.v.h1;
   }
-  return '#2b2160';
+  return TH().bar;
 }
 
 function openDesign() {
@@ -249,6 +249,7 @@ window.onVoice = (text, err) => {
   }
   const v = parseVoice(text);
   const pre = { title: v.title || text };
+  if (v.kind === 'task') { const c = guessCat(pre.title); if (c) pre.cat = c; }
   if (v.kind === 'alarm') {
     if (v.time) pre.time = v.time;
     if (v.days.length) pre.days = v.days;
@@ -346,9 +347,11 @@ function reportScreen() {
   const histHtml = hist.length ? hist.map(l => {
     const [c, t] = st(l);
     const d = new Date(at(l.occ, 0));
-    return `<div class="row"><div class="ico ${l.type === 'task_missed' ? 'event' : 'task'}">${l.type === 'task_missed' ? '✕' : '✓'}</div>
-      <div class="body"><div class="t1">${esc(l.title)}</div><div class="t2">${DAYS_LONG[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}</div></div>
-      <span class="pill ${c}">${t} · ‎${l.pts > 0 ? '+' : ''}${l.pts || 0}⭐</span></div>`;
+    const canAdj = l.type === 'task_missed' || l.status === 'approved' || !l.status;
+    const pc = l.status === 'pending' || l.status === 'rejected' || l.type === 'task_missed' ? c : (l.pts || 0) < 0 ? 'neg' : c;
+    return `<div class="row${canAdj ? ' tap' : ''}"${canAdj ? ` data-adjust="${esc(l.id)}"` : l.status === 'pending' ? ` data-decide="${esc(l.id)}"` : ''}><div class="ico ${l.type === 'task_missed' ? 'event' : 'task'}">${l.type === 'task_missed' ? '✕' : (CATS[catOf(S.items[l.ref])] || { e: '✓' }).e}</div>
+      <div class="body"><div class="t1">${esc(l.title)}</div><div class="t2">${DAYS_LONG[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}${l.adjBy ? ' · עודכן ע״י ' + esc(l.adjBy) : ''}</div></div>
+      <span class="pill ${pc}">${t} · ‎${l.pts > 0 ? '+' : ''}${l.pts || 0}⭐</span></div>`;
   }).join('') : `<div class="empty">אין משימות בתקופה הזו</div>`;
 
   // compare kids
@@ -378,6 +381,8 @@ function reportScreen() {
         ${tile(s.pending, 'מחכות לאישור')}
       </div></div></div>
 
+    ${catReport(s)}
+
     <div class="sec-title"><h2>⏰ השכמה ויציאה</h2></div>
     <div class="tiles">
       ${tile(s.wokeOnTime + '/' + (s.woke + s.wakeMissed), 'קמ' + G('ה', '') + ' בלי נודניק')}
@@ -392,6 +397,24 @@ function reportScreen() {
     <div class="sec-title"><h2>📝 היסטוריית משימות</h2></div>
     <div class="card">${histHtml}</div>
   </main>`;
+}
+/** Tasks by category for the report period. */
+function catReport(s) {
+  const rows = {};
+  s.logs.filter(l => l.type === 'task_done' || l.type === 'task_missed').forEach(l => {
+    const k = catOf(S.items[l.ref]) || 'none';
+    const r = rows[k] = rows[k] || { done: 0, missed: 0, pts: 0 };
+    if (l.type === 'task_missed') r.missed++;
+    else if (l.status === 'approved' || !l.status) r.done++;
+    r.pts += l.pts || 0;
+  });
+  const keys = CAT_ORDER.concat(['none']).filter(k => rows[k]);
+  if (!keys.length) return '';
+  return `<div class="sec-title"><h2>🗂️ לפי קטגוריה</h2></div><div class="card"><table class="cmp">
+    <tr><th></th><th>✅ בוצעו</th><th>✕ לא</th><th>⭐</th></tr>
+    ${keys.map(k => { const c = CATS[k] || { e: '📝', n: 'בלי קטגוריה' }; const r = rows[k];
+      return `<tr><td>${c.e} ${c.n}</td><td>${r.done}</td><td>${r.missed}</td><td>‎${r.pts > 0 ? '+' : ''}${r.pts}</td></tr>`; }).join('')}
+  </table></div>`;
 }
 function statsMini() {
   const s = kidStats(KID, 'week');

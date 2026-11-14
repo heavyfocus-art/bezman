@@ -27,6 +27,40 @@ const isChild = () => S.me.role === 'child';
 const dayAdd = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const fmtCode = c => (c || '').replace(/(.{5})(?=.)/g, '$1-');
 
+// ---------- task categories (chosen by the parent when adding a task) ----------
+const CATS = {
+  school: { e: '📚', n: 'בית ספר', c: '#2f6fed' },
+  class:  { e: '🎨', n: 'חוגים', c: '#e94f8a' },
+  home:   { e: '🏠', n: 'משימות בית', c: '#1fa971' },
+  self:   { e: '🪥', n: 'שגרה ובריאות', c: '#0ea5b7' },
+  other:  { e: '⭐', n: 'אחר', c: '#8d88a8' },
+};
+const CAT_ORDER = ['school', 'class', 'home', 'self', 'other'];
+const catOf = t => (t && CATS[t.cat]) ? t.cat : '';
+function catChip(t) {
+  const k = catOf(t);
+  if (!k) return '';
+  return ` <span class="cat" style="--cc:${CATS[k].c}">${CATS[k].e} ${CATS[k].n}</span>`;
+}
+/** A first guess from the words of the task (the parent can always pick another). */
+function guessCat(title) {
+  const t = ' ' + String(title || '') + ' ';
+  if (/שיעורי|שעורי|מבחן|בוחן|מחברת|ספר |לקרוא|קריאה|כתיבה|חשבון|מתמטיקה|אנגלית|תורה|עבודה ל|פרויקט|בית ספר|בית הספר|כיתה|מורה|ילקוט|תיק /.test(t)) return 'school';
+  if (/חוג|אימון|ריקוד|כדורגל|כדורסל|שחייה|שחיה|גיטרה|פסנתר|נגינה|ציור|קרטה|ג׳ודו|ג'ודו|התעמלות|תיאטרון|צופים|תנועה/.test(t)) return 'class';
+  if (/לסדר|לנקות|כלים|זבל|כביסה|מיטה|חדר|שולחן|לערוך|לשטוף|לקפל|צעצועים|כלב|חתול|להאכיל|לטאטא|קניות/.test(t)) return 'home';
+  if (/שיניים|מקלחת|להתקלח|לישון|תרופה|ויטמין|לאכול|ארוחת|ספורט|הליכה|להתלבש|פיג׳מה|פיג'מה/.test(t)) return 'self';
+  return '';
+}
+/** Sets one of the kids' designs on the page (see themes.js). */
+function setTheme(id) {
+  id = themeOf(id);
+  const t = THEMES[id], b = document.body;
+  b.dataset.theme = id;
+  b.classList.toggle('dark', !!t.dark);
+  b.classList.toggle('ybish', !!t.yb);
+  b.classList.toggle('chunky', ['quest', 'questyb', 'pet', 'map', 'league'].indexOf(id) >= 0);
+}
+
 function occursOn(it, d) {
   if (it.date) return it.date === occOf(d);
   return Array.isArray(it.days) && it.days.indexOf(d.getDay()) >= 0;
@@ -109,7 +143,11 @@ function load() {
 window.onPhotoSent = () => { load(); toast('התמונה נשלחה להורים לאישור 📷'); };
 window.onNative = () => {
   if (!MODAL) load();
-  else { try { S = JSON.parse(B.state()); if (S.celebrate) celebrate(); } catch (e) {} }
+  else {
+    try { S = JSON.parse(B.state()); if (S.celebrate) celebrate(); } catch (e) {}
+    // the app lock closed: never leave a parent screen open behind it
+    if (S && S.me && S.me.role !== 'child' && S.me.session === false) { MODAL = null; $('#modal-root').innerHTML = ''; render(); }
+  }
 };
 window.onBack = () => {
   if (MODAL) { closeModal(); return true; }
@@ -192,8 +230,7 @@ function fireworks() {
   const W = cv.width = window.innerWidth * 2, H = cv.height = window.innerHeight * 2;
   fx.appendChild(cv);
   const ctx = cv.getContext('2d');
-  const yb = document.body.dataset.theme === 'yb';
-  const colors = yb ? ['#ffd200', '#ffffff', '#ffe866', '#fff4b8', '#ffb800'] : ['#ffd166', '#ff7a59', '#9c84ff', '#3ddc97', '#ff6fb5', '#ffffff'];
+  const colors = TH().fx;
   const parts = [];
   const burst = (x, y) => {
     const col = colors[Math.floor(Math.random() * colors.length)];
@@ -283,13 +320,15 @@ function phoneNote(r, now) {
 
 function rowHtml(r, child, now) {
   const it = r.it;
+  // parents: tap a row to change it
+  const tap = !child && (r.type === 'task' || r.type === 'event' || r.type === 'alarm') ? ` tap" data-edit="${esc(it.id)}` : '';
   if (r.type === 'alarm') {
     let st;
     if (r.log) st = `<span class="pill ok">${child ? 'קמת' : G('קמה', 'קם')} ב-${tHM(r.log.at)} · \u200E+${r.log.pts}⭐</span>`;
     else if (r.miss) st = `<span class="pill warn">⚠️ השעון לא כובה בזמן</span>`;
     else if (now < r.t) st = `<span class="pill wait">מתוכנן</span>` + (child ? '' : phoneNote(r, now));
     else st = child ? `<span class="pill sun">מצלצל…</span>` : (alarmNote(r, now) || `<span class="pill sun">מצלצל…</span>`);
-    return `<div class="row ${r.log ? 'done' : ''}">
+    return `<div class="row ${r.log ? 'done' : ''}${tap}">
       <div class="ico ${r.log ? 'ok' : 'alarm'}">${r.log ? '☀️' : '⏰'}</div>
       <div class="body"><div class="t1">השכמה${it.label ? ' · ' + esc(it.label) : ''}</div><div class="t2">${st}${r.snooze && r.log ? ' <span class="small muted">(עם נודניק)</span>' : ''}</div></div>
       <div class="time">${esc(it.time)}</div></div>`;
@@ -302,7 +341,7 @@ function rowHtml(r, child, now) {
     if (child && !r.log && r.occ === occOf(new Date()) && now >= r.leave - 60 * 60000 && now < r.start + 90 * 60000) {
       btn = `<button class="btn mint small" data-act="left" data-ref="${esc(it.id)}" data-occ="${r.occ}">יצאתי ✅</button>`;
     }
-    return `<div class="row ${r.log ? 'done' : ''}">
+    return `<div class="row ${r.log ? 'done' : ''}${tap}">
       <div class="ico ${r.log ? 'ok' : 'event'}">${r.log ? '🚀' : '🎒'}</div>
       <div class="body"><div class="t1">${esc(it.title)}</div><div class="t2">${st}</div></div>
       ${btn || `<div class="time">${tHM(r.leave)}</div>`}</div>`;
@@ -311,19 +350,24 @@ function rowHtml(r, child, now) {
   const ts = taskState(r.log);
   const canMark = child && r.occ === occOf(new Date()) && (ts === 'open' || ts === 'rejected');
   const base = it.pts || 5;
-  let st, mark;
+  let st, mark, side = '';
   if (ts === 'approved') {
-    st = `<span class="pill ok">אושר${r.log.approvedBy && !child ? ' ע״י ' + esc(r.log.approvedBy) : ''} · ‎+${r.log.pts}⭐</span>`;
+    st = `${ptsPill(r.log.pts, 'אושר' + (r.log.approvedBy && !child ? ' ע״י ' + esc(r.log.approvedBy) : ''))}${r.log.late ? ' <span class="small muted">· באיחור</span>' : ''}${r.log.adjBy ? ' <span class="small muted">· עודכן</span>' : ''}`;
     mark = `<div class="check on">✓</div>`;
+    if (!child) side = `<button class="adj" data-adjust="${esc(r.log.id)}">✏️ נקודות</button>`;
   } else if (ts === 'pending') {
-    st = `<span class="pill wait">⏳ ${child ? 'סימנת בוצע ·' : ''} מחכה לאישור${child ? '' : ' שלך'}</span>`;
+    st = `<span class="pill wait">⏳ ${child ? 'סימנת בוצע ·' : ''} מחכה לאישור${child ? '' : ' שלך'}</span>`
+      + (r.log.late ? ` <span class="pill sun">⏰ באיחור – ${child ? 'ההורים יחליטו על הנקודות' : 'אתם מחליטים על הנקודות'}</span>` : '');
     mark = `<div class="check wait">⏳</div>`;
+    if (!child) side = `<button class="adj" data-decide="${esc(r.log.id)}">להחליט</button>`;
   } else if (ts === 'missed') {
-    st = `<span class="pill warn">${r.log.auto ? 'לא סומן עד סוף היום' : 'לא בוצע'} · ‎${r.log.pts}⭐</span>`;
+    st = `<span class="pill warn">${r.log.auto ? 'לא סומן עד סוף היום' : 'לא בוצע'} · ‎${r.log.pts}⭐</span>${r.log.adjBy ? ' <span class="small muted">· עודכן</span>' : ''}`;
     mark = `<div class="check x">✕</div>`;
+    if (!child) side = `<button class="adj" data-adjust="${esc(r.log.id)}">✏️ נקודות</button>`;
   } else {
     st = ts === 'rejected' ? `<span class="pill warn">↩️ לא אושר – אפשר לבצע ולסמן שוב</span>`
-      : (now > r.t ? `<span class="pill warn">עבר הזמן</span> ${base}⭐` : `עד ${esc(it.time || 'סוף היום')} · ${base}⭐`);
+      : (now > r.t ? `<span class="pill warn">עבר הזמן</span> ${child ? 'אם תסמנ' + G('י', '') + ' עכשיו – ההורים יחליטו על הנקודות' : 'סימון עכשיו = ההורים מחליטים על הנקודות'}`
+        : `עד ${esc(it.time || 'סוף היום')} · ${base}⭐`);
     if (it.photo) st += ` <span class="small">· 📷 צריך תמונה</span>`;
     mark = `<div class="check"></div>`;
   }
@@ -331,10 +375,16 @@ function rowHtml(r, child, now) {
       <button class="btn mint small" data-done="${esc(it.id)}" data-occ="${r.occ}">${it.photo ? '📷 ' : ''}בוצע ✅</button>
       <button class="btn danger small" data-notdone="${esc(it.id)}" data-occ="${r.occ}">לא בוצע ✕</button></div>` : '';
   const photo = r.log && r.log.photo ? `<div class="thumbwrap" data-photo="${esc(r.log.id)}"></div>` : '';
-  return `<div class="row ${ts === 'approved' || ts === 'missed' ? 'done' : ''}">
+  return `<div class="row ${ts === 'approved' || ts === 'missed' ? 'done' : ''}${tap}">
     ${mark}
-    <div class="body"><div class="t1">${esc(it.title)}</div><div class="t2">${st}</div>${btns}</div>
-    ${photo || `<div class="time">${esc(it.time || '')}</div>`}</div>`;
+    <div class="body"><div class="t1">${esc(it.title)}${catChip(it)}</div><div class="t2">${st}</div>${btns}</div>
+    ${photo}${side || (photo ? '' : `<div class="time">${esc(it.time || '')}</div>`)}</div>`;
+}
+/** "+5⭐" in green, "-3⭐" in red, "0⭐" in grey. */
+function ptsPill(pts, label) {
+  pts = pts || 0;
+  const cls = pts > 0 ? 'ok' : pts < 0 ? 'neg' : 'wait';
+  return `<span class="pill ${cls}">${label ? label + ' · ' : ''}‎${pts > 0 ? '+' : ''}${pts}⭐</span>`;
 }
 
 /** open | pending | approved | rejected | missed */
@@ -355,14 +405,17 @@ function approvalsCard() {
   if (!p.length) return '';
   return `<div class="sec-title"><h2>📝 מחכה לאישור שלך (${p.length})</h2></div>` + p.map(l => {
     const d = l.occ === occOf(new Date()) ? 'היום' : 'ביום ' + new Date(at(l.occ, 0)).toLocaleDateString('he-IL', { weekday: 'long' });
-    return `<div class="card" style="border:2px solid var(--violet-soft)">
+    const t = S.items[l.ref];
+    return `<div class="card" style="border:2px solid ${l.late ? 'var(--sun)' : 'var(--violet-soft)'}">
       <div style="display:flex;gap:12px;align-items:flex-start">
-        <div style="flex:1"><b>${esc(l.title)}</b>
-          <div class="small muted">${esc(kidName())} ${G('סימנה', 'סימן')} בוצע ${d} ב-${tHM(l.at)}${l.late ? ' (אחרי הזמן)' : ''} · ${l.claim || 0}⭐</div></div>
+        <div style="flex:1"><b>${esc(l.title)}</b>${catChip(t)}
+          <div class="small muted">${esc(kidName())} ${G('סימנה', 'סימן')} בוצע ${d} ב-${tHM(l.at)}</div>
+          ${l.late ? `<div style="margin-top:6px"><span class="pill sun">⏰ באיחור${l.lateMin ? ' של ' + dur(l.lateMin * 60000) : ''} – 0⭐ אוטומטית, אתם מחליטים</span></div>`
+            : `<div style="margin-top:6px"><span class="pill wait">בזמן · ${l.claim || 0}⭐</span></div>`}</div>
         ${l.photo ? `<div class="thumbwrap" data-photo="${esc(l.id)}"></div>` : ''}
       </div>
       <div class="actions" style="margin-top:12px">
-        <button class="btn mint" data-approve="${esc(l.id)}">לאשר ✅</button>
+        <button class="btn mint" data-decide="${esc(l.id)}">${l.late ? 'להחליט על הנקודות' : 'לאשר ✅'}</button>
         <button class="btn light" data-reject="${esc(l.id)}">לא אושר ↩️</button>
       </div></div>`;
   }).join('');
@@ -404,17 +457,22 @@ function render() {
   clearInterval(tickTimer);
   const app = $('#app');
   if (!S.me.role || !S.me.code) {
-    document.body.dataset.theme = OB.theme || 'purple';
+    setTheme(OB.theme || 'purple');
     bars();
     app.innerHTML = onboarding(); bindOnboarding(); return;
   }
-  if (!isChild() && S.me.unlocked === false) {
-    document.body.dataset.theme = 'purple'; bars();
+  // secure entry on a parent's phone: joined (needs the PIN), app lock, or no PIN yet
+  if (!isChild() && (S.me.unlocked === false || S.me.session === false)) {
+    setTheme('purple'); applyDesign(); bars();
     app.innerHTML = lockScreen(); bindLock(); return;
   }
+  BIO_ASKED = false;
+  if (!isChild() && !S.me.pinSet) {
+    setTheme('purple'); applyDesign(); bars();
+    app.innerHTML = forcePinScreen(); bindForcePin(); return;
+  }
   pickKid();
-  const th = kidInfo().theme;
-  document.body.dataset.theme = th === 'yb' || th === 'orange' ? th : 'purple';
+  setTheme(kidInfo().theme);
   applyDesign();
   bars();
   if ((TAB === 'report' || TAB === 'calendar') && isChild()) TAB = 'today';
@@ -435,7 +493,7 @@ function render() {
 }
 let lastBars = '';
 function bars() {
-  const c = document.body.dataset.theme === 'orange' ? '#7a2e00' : heroColor();
+  const c = heroColor();
   if (c !== lastBars && B.setBars) { lastBars = c; B.setBars(c); }
 }
 function navBtn(id, ico, txt, badge) {
@@ -449,7 +507,7 @@ function kidTabs() {
   return `<div class="kidtabs">${ks.map(k => {
     const n = list('log').filter(l => kidOf(l) === k.kid && l.type === 'task_done' && l.status === 'pending').length
       + list('redeem').filter(r => kidOf(r) === k.kid && r.status === 'pending').length;
-    return `<button class="${k.kid === KID ? 'on' : ''}" data-kid="${esc(k.kid)}"><span class="dot" style="background:${k.theme === 'yb' ? '#ffd200' : '#9c84ff'}"></span>${esc(k.name)}${n ? `<span class="badge">${n}</span>` : ''}</button>`;
+    return `<button class="${k.kid === KID ? 'on' : ''}" data-kid="${esc(k.kid)}"><span class="dot" style="background:${THEMES[themeOf(k.theme)].kc}"></span>${esc(k.name)}${n ? `<span class="badge">${n}</span>` : ''}</button>`;
   }).join('')}</div>`;
 }
 
@@ -465,7 +523,7 @@ function hero(title, sub) {
       <div class="chip"><b>\u200E${sc.pts}</b><span>⭐ נקודות</span></div>
       <div class="chip"><b>${sc.streak}</b><span>🔥 ימים ברצף</span></div>
       <div class="chip"><b>\u200E${todayPts >= 0 ? '+' : ''}${todayPts}</b><span>✨ היום</span></div>
-    </div>${kidTabs()}</div>`;
+    </div>${levelCard()}${kidTabs()}</div>`;
 }
 function dateLine() {
   return new Date().toLocaleDateString('he-IL', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -594,10 +652,9 @@ function parentToday() {
   const joined = kids().length > 0;
   const rows = agenda(new Date());
   const pending = mine('redeem').filter(r => r.status === 'pending');
-  const gifts = `<button class="btn ghost block" data-new="gift">${kidInfo().theme === 'yb' ? '💛' : '💜'} לתת בונוס / מילה טובה ל${esc(kid)}</button>`;
+  const gifts = `<button class="btn ghost block" data-new="gift">${THEMES[themeOf(kidInfo().theme)].yb ? '💛' : '💜'} לתת בונוס / מילה טובה ל${esc(kid)}</button>`;
   return hero(`${esc(kid)} היום`, dateLine()) + `<main>
     ${updateBanner()}${permBanner()}
-    ${!S.me.pinSet ? `<div class="banner" style="background:var(--sun-soft);color:#6b4b00"><div style="flex:1">🔒 כדאי לקבוע קוד הורים – כדי שאף ילד לא יוכל להתחבר כהורה ולאשר לעצמו משימות</div><button class="btn small" data-setpin="1">לקבוע</button></div>` : ''}
     ${!joined ? `<div class="card"><b>📲 אף ילד עוד לא מחובר</b><p class="muted small">מתקינים את האפליקציה בטלפון של הילד/ה, בוחרים "אני ילד/ה" ומקלידים את קוד המשפחה.</p><button class="btn block" data-share="1">שליחת הקוד בוואטסאפ</button></div>` : ''}
     ${parentSections({
       approvals: approvalsCard(),
@@ -645,10 +702,15 @@ function planScreen() {
     }).join('') : `<div class="card empty"><div class="e">🎒</div>מוסיפים חוג – והאפליקציה תזכיר מתי להתארגן ומתי לצאת</div>`}
 
     <div class="sec-title"><h2>✅ משימות</h2><button class="add" data-new="task">+ הוספה</button></div>
-    ${tasks.length ? tasks.map(t => `<div class="card item" data-edit="${esc(t.id)}">
-        <div class="ico task">📝</div>
-        <div style="flex:1"><b>${esc(t.title)}</b><div class="small muted">${daysText(t)} · עד ${esc(t.time || '')} · ${t.pts || 5}⭐${t.by ? ' · מאת ' + esc(t.by) : ''}</div></div></div>`).join('')
-      : `<div class="card empty"><div class="e">📝</div>אין משימות פתוחות</div>`}
+    ${tasks.length ? CAT_ORDER.concat(['']).map(k => {
+      const g = tasks.filter(t => catOf(t) === k);
+      if (!g.length) return '';
+      const c = CATS[k] || { e: '📝', n: 'בלי קטגוריה', c: '#8d88a8' };
+      return `<div class="cathead" style="--cc:${c.c}"><i></i>${c.e} ${c.n} · ${g.length}</div>` + g.map(t => `<div class="card item withcat" style="--cc:${c.c}" data-edit="${esc(t.id)}">
+        <div class="ico task">${c.e}</div>
+        <div style="flex:1"><b>${esc(t.title)}</b><div class="small muted">${daysText(t)} · עד ${esc(t.time || '')} · ${t.pts || 5}⭐${t.photo ? ' · 📷' : ''}${t.by ? ' · מאת ' + esc(t.by) : ''}</div></div>
+        ${isChild() ? '' : '<span class="adj">✏️ לשנות</span>'}</div>`).join('');
+    }).join('') : `<div class="card empty"><div class="e">📝</div>אין משימות פתוחות</div>`}
   </main>`;
 }
 function daysRow(it) {
@@ -685,7 +747,8 @@ function rewardsScreen() {
       <b style="color:var(--ink)">איך מרוויחים נקודות?</b><br>
       ☀️ השכמה בלי נודניק: 10 · עם נודניק: 5<br>
       🚪 יציאה בזמן: 10 · עד 10 דק׳ איחור: 5<br>
-      ✅ משימה שההורים אישרו: כל הנקודות · באיחור: חצי<br>
+      ✅ משימה שבוצעה בזמן וההורים אישרו: כל הנקודות<br>
+      ⏰ משימה שסומנה באיחור: אין נקודות אוטומטיות – ההורים מחליטים אם לתת או להוריד, וכמה<br>
       ❌ משימה שלא בוצעה: מינוס חצי מהנקודות שלה<br>
       🔥 כל 5 ימים ברצף של השכמה בזמן: בונוס 15
     </div>
@@ -707,10 +770,7 @@ function settingsScreen() {
       <button class="btn block" data-share="1">📲 שליחה בוואטסאפ עם קישור להתקנה</button>
     </div>
 
-    ${!child ? `<div class="sec-title"><h2>🔒 קוד הורים</h2></div>
-    <div class="card"><div style="display:flex;align-items:center;gap:12px">
-      <div style="flex:1"><b>${S.me.pinSet ? 'מוגדר ✅' : 'עוד לא הוגדר ⚠️'}</b><div class="small muted">נדרש כדי להצטרף כהורה וכדי להוציא טלפון של ילד מהמשפחה</div></div>
-      <button class="btn ${S.me.pinSet ? 'light' : ''} small" data-setpin="1">${S.me.pinSet ? 'שינוי' : 'לקבוע'}</button></div></div>` : ''}
+    ${!child ? securityCard() : ''}
 
     <div class="sec-title"><h2>🔐 הרשאות בטלפון</h2></div>
     <div class="card">
@@ -721,15 +781,15 @@ function settingsScreen() {
       ${p.samsung ? `<div class="hint">📱 <b>בסמסונג:</b> הגדרות ← סוללה ← הגבלות שימוש ברקע ← לוודא ש"בזמן" <b>לא</b> ברשימת "אפליקציות במצב שינה".</div>` : ''}
     </div>
 
-    ${child ? `<div class="sec-title"><h2>🎨 הצבעים שלי</h2></div>
+    ${child ? `<div class="sec-title"><h2>🎨 העיצוב שלי</h2></div>
     <div class="card">
       <div class="theme-pick">${themeButtons(kidInfo().theme, t => `data-settheme="${t}"`)}</div>
       <label class="f">אני</label>
       <div class="seg"><button class="${kidInfo().gender !== 'm' ? 'on' : ''}" data-setgender="f">בת 👧</button><button class="${kidInfo().gender === 'm' ? 'on' : ''}" data-setgender="m">בן 👦</button></div>
     </div>` : `<div class="sec-title"><h2>🎨 עיצוב</h2></div>
     <div class="card"><button class="btn block" data-design="1">🎨 עיצוב אישי של המסך שלי</button>
-      ${kids().map(k => `<label class="f">הצבעים של ${esc(k.name)}</label><div class="theme-pick">${themeButtons(k.theme, t => `data-kidtheme="${esc(k.kid)}|${t}"`)}</div>`).join('')}
-      ${kids().length ? '<div class="small muted" style="margin-top:8px">הצבעים של הילד/ה מתעדכנים גם בטלפון שלו/ה</div>' : ''}
+      ${kids().map(k => `<label class="f">העיצוב של ${esc(k.name)}</label><div class="theme-pick">${themeButtons(k.theme, t => `data-kidtheme="${esc(k.kid)}|${t}"`)}</div>`).join('')}
+      ${kids().length ? '<div class="small muted" style="margin-top:8px">העיצוב מתעדכן גם בטלפון של הילד/ה</div>' : ''}
     </div>
     <div class="card small"><b>👦👧 ילד נוסף?</b><div class="muted">מתקינים אצלו את האפליקציה, בוחרים "אני ילד/ה" ומקלידים את אותו קוד משפחה. כל ילד מקבל לו״ז, נקודות ופרסים משלו, ולמעלה מופיעים כפתורים למעבר בין הילדים.</div></div>`}
 
@@ -766,31 +826,117 @@ function settingsScreen() {
   </main>`;
 }
 
-function themeButtons(cur, attr) {
-  const T = [['purple', 'סגול 💜'], ['orange', 'כתום 🧡'], ['yb', 'צהוב-שחור 💛🖤']];
-  return T.map(([t, n]) => `<button class="tp-${t} ${((cur || 'purple') === t) ? 'on' : ''}" ${attr(t)}>${n}</button>`).join('');
-}
 
-// ---------- parents' PIN ----------
+// ---------- secure entry (parents) ----------
+let PINBUF = '';
+let BIO_ASKED = false;
+let waitTimer = null;
+/** Same rule as on the phone: 4–8 digits, not all the same, not counting up/down. */
+function weakPin(p) {
+  if (!/^\d{4,8}$/.test(p)) return true;
+  let same = true, up = true, down = true;
+  for (let i = 1; i < p.length; i++) {
+    const a = p.charCodeAt(i - 1), b = p.charCodeAt(i);
+    if (b !== a) same = false;
+    if (b !== a + 1) up = false;
+    if (b !== a - 1) down = false;
+  }
+  return same || up || down;
+}
+const pinWait = () => (B.pinWait ? B.pinWait() : 0);
+function pinPad() {
+  return `<div class="pindots">${Array.from({ length: Math.max(4, PINBUF.length) }, (_, i) => `<i class="${i < PINBUF.length ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="pinmsg" id="pin-msg">${pinWait() ? `יותר מדי ניסיונות. אפשר לנסות שוב בעוד ${pinWait()} שניות` : ''}</div>
+    <div class="pinpad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button type="button" data-pk="${n}">${n}</button>`).join('')}
+      <button type="button" data-pk="del" aria-label="מחיקה">⌫</button><button type="button" data-pk="0">0</button><button type="button" data-pk="ok" aria-label="כניסה" style="background:var(--violet);color:var(--on-acc)">✓</button></div>`;
+}
 function lockScreen() {
+  const joining = S.me.unlocked === false;
+  if (joining && !S.me.pinSet) {
+    return `<div class="ob"><div class="logo">🔒</div><h1>קוד הורים</h1><div class="card">
+      <p class="muted" style="margin-top:0">⏳ מחכים לנתוני המשפחה מהטלפונים האחרים… זה לוקח עד כמה דקות. צריך שלפחות טלפון אחד נוסף במשפחה יהיה דלוק ומחובר.</p>
+      <div class="actions"><button class="btn light" data-lockreset="1">ביטול</button><button class="btn ghost" data-sync="1">🔄 לבדוק שוב</button></div></div></div>`;
+  }
   return `<div class="ob">
-    <div class="logo">🔒</div><h1>קוד הורים</h1>
+    <div class="logo">🔒</div><h1>${joining ? 'קוד הורים' : 'כניסה למסך ההורים'}</h1>
     <div class="card">
-      ${S.me.pinSet ? `<p class="muted" style="margin-top:0">הטלפון הזה הצטרף למשפחה כהורה. כדי להמשיך, מקלידים את קוד ההורים שקבעו ההורים בהגדרות.</p>
-        <input class="in time" id="pin-in" type="password" inputmode="numeric" maxlength="8" placeholder="••••">
-        <div class="actions"><button class="btn light" data-lockreset="1">זה לא הורה</button><button class="btn" data-unlock="1">כניסה 🔓</button></div>`
-      : `<p class="muted" style="margin-top:0">⏳ מחכים לנתוני המשפחה מהטלפונים האחרים… זה לוקח עד כמה דקות. צריך שלפחות טלפון אחד נוסף במשפחה יהיה דלוק ומחובר.</p>
-        <div class="actions"><button class="btn light" data-lockreset="1">ביטול</button><button class="btn ghost" data-sync="1">🔄 לבדוק שוב</button></div>`}
-    </div></div>`;
+      <p class="muted center" style="margin:0">${joining ? 'הטלפון הזה הצטרף למשפחה כהורה. מקלידים את קוד ההורים כדי להמשיך.' : `שלום ${esc(S.me.name)} 👋 מקלידים את קוד ההורים`}</p>
+      ${pinPad()}
+      ${!joining && S.me.bio ? `<button class="btn ghost block" style="margin-top:12px" data-bio="1">👆 כניסה בטביעת אצבע / פנים</button>` : ''}
+      ${joining ? `<div class="actions"><button class="btn light" data-lockreset="1">זה לא הורה</button></div>` : ''}
+    </div>
+    <p class="small center" style="opacity:.85">🛡️ אחרי 5 ניסיונות שגויים הטלפון מחכה לפני ניסיון נוסף</p></div>`;
+}
+function bindPinPad(onOk) {
+  document.querySelectorAll('[data-pk]').forEach(b => b.onclick = () => {
+    const k = b.dataset.pk;
+    if (k === 'del') PINBUF = PINBUF.slice(0, -1);
+    else if (k === 'ok') return onOk(PINBUF);
+    else if (PINBUF.length < 8) PINBUF += k;
+    const dots = $('.pindots');
+    if (dots) dots.outerHTML = `<div class="pindots">${Array.from({ length: Math.max(4, PINBUF.length) }, (_, i) => `<i class="${i < PINBUF.length ? 'on' : ''}"></i>`).join('')}</div>`;
+  });
 }
 function bindLock() {
-  const u = $('[data-unlock]');
-  if (u) u.onclick = () => {
-    if (B.unlockPin($('#pin-in').value)) { toast('ברוכים הבאים 👋'); load(); }
-    else { toast('קוד לא נכון'); $('#pin-in').value = ''; }
-  };
+  clearInterval(waitTimer);
+  if (pinWait()) waitTimer = setInterval(() => { const m = $('#pin-msg'); const w = pinWait();
+    if (m) m.textContent = w ? `יותר מדי ניסיונות. אפשר לנסות שוב בעוד ${w} שניות` : ''; if (!w) clearInterval(waitTimer); }, 1000);
+  bindPinPad(pin => {
+    if (pinWait()) return;
+    if (!pin) return;
+    if (B.unlockPin(pin)) { PINBUF = ''; toast('ברוכים הבאים 👋'); load(); return; }
+    PINBUF = '';
+    render();
+    const m = $('#pin-msg');
+    if (m && !pinWait()) m.textContent = 'קוד לא נכון';
+  });
+  const bio = $('[data-bio]');
+  if (bio) bio.onclick = () => B.bio && B.bio();
+  if (bio && !BIO_ASKED && S.me.session === false) { BIO_ASKED = true; setTimeout(() => B.bio && B.bio(), 300); }
   const s = $('[data-sync]'); if (s) s.onclick = () => { B.syncNow(); toast('בודק…'); setTimeout(load, 4000); };
-  const r = $('[data-lockreset]'); if (r) r.onclick = () => { S = JSON.parse(B.reset()); OB = { step: 1 }; render(); };
+  const r = $('[data-lockreset]'); if (r) r.onclick = () => { S = JSON.parse(B.reset()); OB = { step: 1 }; PINBUF = ''; render(); };
+}
+/** A parent's phone without a family PIN: setting one is required before anything else. */
+function forcePinScreen() {
+  return `<div class="ob">
+    <div class="logo">🛡️</div><h1>קוד הורים</h1>
+    <p>לפני שמתחילים – קוד סודי שרק ההורים יודעים</p>
+    <div class="card">
+      <div class="small muted" style="margin-bottom:6px">הקוד שומר שרק הורים יוכלו לאשר משימות, לתת או להוריד נקודות ולשנות משימות. הוא נדרש בכל כניסה למסך ההורים ובהצטרפות של הורה נוסף. לא לספר לילדים 🤫</div>
+      <label class="f">קוד חדש (4–8 ספרות)</label><input class="in time" id="fp-1" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
+      <label class="f">שוב, לאימות</label><input class="in time" id="fp-2" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
+      <div class="hint">💡 לא 1234, לא 0000 ולא תאריך לידה של הילדים</div>
+      <div class="actions"><button class="btn light" data-fpback="1">זה טלפון של ילד/ה</button><button class="btn" data-fpok="1">שמירה 🔒</button></div>
+    </div></div>`;
+}
+function bindForcePin() {
+  $('[data-fpok]').onclick = () => {
+    const a = val('#fp-1').trim(), b = val('#fp-2').trim();
+    if (!/^\d{4,8}$/.test(a)) return toast('הקוד צריך להיות 4 עד 8 ספרות');
+    if (weakPin(a)) return toast('הקוד קל מדי לניחוש – בוחרים קוד אחר');
+    if (a !== b) return toast('שני הקודים לא זהים');
+    if (B.setPin(a, '')) { toast('קוד ההורים נשמר 🔒'); load(); }
+    else toast('לא הצלחתי לשמור');
+  };
+  $('[data-fpback]').onclick = () => confirmBox('לצאת ולהתחיל מחדש?', 'אפשר להצטרף שוב כילד/ה עם קוד המשפחה.', 'כן', () => {
+    S = JSON.parse(B.reset()); OB = { step: 1 }; TAB = 'today'; render();
+  });
+}
+function securityCard() {
+  const mins = [1, 5, 15];
+  return `<div class="sec-title"><h2>🛡️ אבטחה וכניסה</h2></div>
+    <div class="card">
+      <div class="secrow"><div class="st"><b>קוד הורים ${S.me.pinSet ? '✅' : '⚠️'}</b><span>נדרש לכניסה למסך ההורים, להצטרפות הורה נוסף ולהוצאת טלפון של ילד</span></div>
+        <button class="btn light small" data-setpin="1">${S.me.pinSet ? 'שינוי' : 'לקבוע'}</button></div>
+      <div class="secrow"><div class="st"><b>נעילת האפליקציה</b><span>${S.me.lockOn ? 'דורש קוד כשחוזרים לאפליקציה' : 'כבוי – כל מי שמחזיק את הטלפון יכול לאשר משימות'}</span></div>
+        <button class="toggle ${S.me.lockOn ? 'on' : ''}" data-lockon="1" aria-label="נעילת האפליקציה"></button></div>
+      ${S.me.lockOn ? `<div class="secrow"><div class="st"><b>לנעול אחרי</b><span>זמן מחוץ לאפליקציה</span></div>
+        <div class="seg" style="flex:none">${mins.map(m => `<button class="${(S.me.lockMin || 1) === m ? 'on' : ''}" data-lockmin="${m}">${m} דק׳</button>`).join('')}</div></div>` : ''}
+      ${S.me.bioAvail && S.me.lockOn ? `<div class="secrow"><div class="st"><b>👆 טביעת אצבע / פנים</b><span>רק אם אין בטלפון הזה טביעת אצבע של אחד הילדים</span></div>
+        <button class="toggle ${S.me.bio ? 'on' : ''}" data-bioset="1" aria-label="טביעת אצבע"></button></div>` : ''}
+      ${S.me.lockOn ? `<button class="btn ghost block" style="margin-top:10px" data-locknow="1">🔒 לנעול עכשיו</button>` : ''}
+    </div>
+    <div class="card small muted">🛡️ <b style="color:var(--ink)">מה עוד מוגן:</b> הסנכרון בין הטלפונים מוצפן (AES-256) עם קוד המשפחה · אחרי 5 קודים שגויים הטלפון מחכה · טלפון של ילד לא יכול לאשר משימות, לתת לעצמו נקודות, לשנות נקודות של משימה או לשנות הגדרות של ההורים – גם אם מנסים לעקוף את המסך, השינוי נדחה בכל הטלפונים.</div>`;
 }
 function pinModal(title, text, onOk, needOld) {
   openModal(`<h3>${esc(title)}</h3><p class="muted small">${esc(text)}</p>
@@ -800,6 +946,7 @@ function pinModal(title, text, onOk, needOld) {
     <div class="actions"><button class="btn light" data-c="no">ביטול</button><button class="btn" data-c="yes">אישור</button></div>`, root => {
     root.querySelector('[data-c=no]').onclick = closeModal;
     root.querySelector('[data-c=yes]').onclick = () => {
+      if (pinWait()) return toast(`יותר מדי ניסיונות. לנסות שוב בעוד ${pinWait()} שניות`);
       const o = root.querySelector('#pin-old'), n = root.querySelector('#pin-new').value, n2 = root.querySelector('#pin-new2');
       if (n2 && n !== n2.value) return toast('שני הקודים לא זהים');
       onOk(n, o ? o.value : '');
@@ -808,12 +955,104 @@ function pinModal(title, text, onOk, needOld) {
 }
 function openSetPin() {
   pinModal(S.me.pinSet ? 'שינוי קוד הורים' : 'קביעת קוד הורים',
-    'הקוד נדרש כשמצטרפים למשפחה כהורה, וכשרוצים להוציא טלפון של ילד מהמשפחה. לא לספר אותו לילדים 🤫',
+    'הקוד נדרש בכניסה למסך ההורים, כשמצטרפים למשפחה כהורה, וכשרוצים להוציא טלפון של ילד מהמשפחה. לא לספר אותו לילדים 🤫',
     (n, o) => {
       if (!/^\d{4,8}$/.test(n)) return toast('הקוד צריך להיות 4 עד 8 ספרות');
+      if (weakPin(n)) return toast('הקוד קל מדי לניחוש – בוחרים קוד אחר');
       if (B.setPin(n, o)) { MODAL = null; $('#modal-root').innerHTML = ''; load(); toast('קוד ההורים נשמר 🔒'); }
-      else toast(S.me.pinSet ? 'הקוד הנוכחי לא נכון' : 'לא הצלחתי לשמור');
+      else toast(pinWait() ? `יותר מדי ניסיונות. לנסות שוב בעוד ${pinWait()} שניות` : S.me.pinSet ? 'הקוד הנוכחי לא נכון' : 'לא הצלחתי לשמור');
     }, S.me.pinSet ? true : false);
+}
+
+// ---------- the parent decides the points ----------
+/** − [number] + and quick choices; v may be minus (taking points off). */
+function stepperHtml(v, quick) {
+  return `<div class="stepper"><button type="button" data-st="-1" aria-label="פחות">−</button>
+      <input class="in num" id="f-pts" type="number" inputmode="numeric" min="-999" max="999" step="1" value="${v}">
+      <button type="button" data-st="1" aria-label="יותר">+</button></div>
+    <div class="ptsays" id="f-says"></div>
+    <div class="opts quick" style="justify-content:center">${quick.map(q => `<button type="button" data-q="${q}">${q > 0 ? '‎+' + q : q < 0 ? '‎' + q : '0'}</button>`).join('')}</div>`;
+}
+function bindStepper(root, says) {
+  const inp = root.querySelector('#f-pts');
+  const upd = () => {
+    const n = parseInt(inp.value, 10);
+    const el = root.querySelector('#f-says');
+    root.querySelectorAll('[data-q]').forEach(b => b.classList.toggle('on', +b.dataset.q === n));
+    if (isNaN(n)) { el.textContent = ''; return; }
+    el.className = 'ptsays ' + (n > 0 ? 'pos' : n < 0 ? 'neg' : 'zero');
+    el.textContent = says(n);
+  };
+  root.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { inp.value = Math.max(-999, Math.min(999, (parseInt(inp.value, 10) || 0) + (+b.dataset.st))); upd(); });
+  root.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { inp.value = b.dataset.q; upd(); });
+  inp.oninput = upd;
+  upd();
+  return () => { const v = String(inp.value).trim(); return /^-?\d{1,3}$/.test(v) ? parseInt(v, 10) : null; };
+}
+const halfUp = n => Math.max(1, Math.ceil(n / 2));
+function saysFor(n) {
+  return n > 0 ? `${kidName()} ${G('תקבל', 'יקבל')} ‎+${n}⭐` : n < 0 ? `ירדו ל${kidName()} ${-n}⭐` : 'בלי נקודות – לא נותנים ולא מורידים';
+}
+function decideModal(id) {
+  const l = item(id);
+  if (!l || l.status !== 'pending') return;
+  const t = S.items[l.ref];
+  const base = t ? (t.pts || 5) : Math.max(1, l.claim || 5);
+  const late = !!l.late;
+  const v = late ? 0 : (l.claim != null ? l.claim : base);
+  const quick = late ? [-base, -halfUp(base), 0, halfUp(base), base] : [0, halfUp(base), base, base + halfUp(base), base * 2];
+  openModal(`<h3>${late ? '⏰ ' : '✅ '}${esc(l.title)}</h3>
+    <div class="decide-head"><div style="flex:1">
+      <div class="small muted">${esc(kidName())} ${G('סימנה', 'סימן')} בוצע ב-${tHM(l.at)}${t ? ' · המשימה שווה ' + base + '⭐' : ''}</div>${catChip(t)}</div>
+      ${l.photo ? `<div class="thumbwrap" data-photo="${esc(l.id)}"></div>` : ''}</div>
+    ${late ? `<div class="latebox">⏰ סומן <b>באיחור${l.lateMin ? ' של ' + dur(l.lateMin * 60000) : ''}</b> – לכן אין נקודות אוטומטיות. אתם מחליטים: לתת נקודות, לא לתת, או להוריד – וכמה.</div>`
+      : `<div class="hint">סומן בזמן. אפשר לאשר כמו שזה, או להוסיף / להוריד נקודות.</div>`}
+    <label class="f">כמה נקודות?</label>
+    ${stepperHtml(v, quick)}
+    <div class="actions"><button class="btn light" data-c="back">לא אושר ↩️</button><button class="btn mint" data-c="ok">לאשר ✅</button></div>
+    <div class="small muted center" style="margin-top:8px">"לא אושר" מחזיר את המשימה – אפשר לבצע ולסמן שוב</div>`, root => {
+    fillPhotos();
+    const read = bindStepper(root, saysFor);
+    root.querySelector('[data-c=back]').onclick = () => {
+      MODAL = null; $('#modal-root').innerHTML = '';
+      if (B.decide) B.decide(id, false, 0); else B.action('reject', id, '');
+      load(); toast(G('הוחזר אליה – היא יכולה לבצע ולסמן שוב', 'הוחזר אליו – הוא יכול לבצע ולסמן שוב'));
+    };
+    root.querySelector('[data-c=ok]').onclick = () => {
+      const n = read();
+      if (n == null) return toast('נקודות: מספר שלם בין ‎-999 ל-999');
+      MODAL = null; $('#modal-root').innerHTML = '';
+      const ok = B.decide ? B.decide(id, true, n) : B.action('approve', id, '') > 0;
+      load();
+      if (!ok) return toast('לא נשמר – צריך להיכנס עם קוד ההורים');
+      if (n > 0) { confetti(); toast(`אושר ✅ ${kidName()} ${G('קיבלה', 'קיבל')} ‎+${n}⭐`); }
+      else toast(n < 0 ? `אושר · ירדו ${-n}⭐` : 'אושר · בלי נקודות');
+    };
+  });
+}
+function adjustModal(id) {
+  const l = item(id);
+  if (!l) return;
+  const t = S.items[l.ref];
+  const base = t ? (t.pts || 5) : 5;
+  const cur = l.pts || 0;
+  const quick = [-base, -halfUp(base), 0, halfUp(base), base];
+  openModal(`<h3>✏️ נקודות: ${esc(l.title)}</h3>
+    <div class="small muted">${l.type === 'task_missed' ? 'סומן "לא בוצע"' : 'אושר'}${l.late ? ' · סומן באיחור' : ''} · עכשיו ${ptsPill(cur)}${l.adjBy ? ' · עודכן ע״י ' + esc(l.adjBy) : ''}</div>
+    <label class="f">כמה נקודות במקום?</label>
+    ${stepperHtml(cur, quick)}
+    <div class="actions"><button class="btn light" data-c="no">ביטול</button><button class="btn" data-c="ok">שמירה</button></div>`, root => {
+    const read = bindStepper(root, saysFor);
+    root.querySelector('[data-c=no]').onclick = closeModal;
+    root.querySelector('[data-c=ok]').onclick = () => {
+      const n = read();
+      if (n == null) return toast('נקודות: מספר שלם בין ‎-999 ל-999');
+      MODAL = null; $('#modal-root').innerHTML = '';
+      const ok = B.adjust ? B.adjust(id, n) : false;
+      load();
+      toast(ok ? 'הנקודות עודכנו ✏️' : 'לא נשמר – צריך להיכנס עם קוד ההורים');
+    };
+  });
 }
 
 // ---------- onboarding ----------
@@ -907,6 +1146,7 @@ function bindCommon() {
     const pts = B.action('task', t.id, occ);
     load();
     if (pts > 0) { if (!S.celebrate) confetti(); toast(`נשלח להורים לאישור 💌 \u200E+${pts}⭐ אחרי אישור`); }
+    else if (pts === 0) toast('נשלח להורים 💌 סימנת אחרי הזמן – ההורים יחליטו על הנקודות');
   });
   document.querySelectorAll('[data-notdone]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
@@ -918,6 +1158,17 @@ function bindCommon() {
       toast(`סומן לא בוצע · \u200E-${penalty(t)}⭐`);
     }, true);
   });
+  document.querySelectorAll('[data-decide]').forEach(b => b.onclick = (e) => { e.stopPropagation(); decideModal(b.dataset.decide); });
+  document.querySelectorAll('[data-adjust]').forEach(b => b.onclick = (e) => { e.stopPropagation(); adjustModal(b.dataset.adjust); });
+  document.querySelectorAll('[data-lockon]').forEach(b => b.onclick = () => {
+    if (!B.setLock) return toast('צריך לעדכן גרסה');
+    const on = !S.me.lockOn;
+    B.setLock(on, S.me.lockMin || 1);
+    load(); toast(on ? 'נעילת האפליקציה הופעלה 🔒' : 'נעילת האפליקציה כובתה');
+  });
+  document.querySelectorAll('[data-lockmin]').forEach(b => b.onclick = () => { B.setLock(true, +b.dataset.lockmin); load(); });
+  document.querySelectorAll('[data-bioset]').forEach(b => b.onclick = () => { B.setBio(!S.me.bio); load(); toast(!S.me.bio ? 'כניסה בטביעת אצבע כובתה' : 'אפשר להיכנס בטביעת אצבע 👆'); });
+  document.querySelectorAll('[data-locknow]').forEach(b => b.onclick = () => { PINBUF = ''; B.lockNow(); setTimeout(load, 50); });
   document.querySelectorAll('[data-approve],[data-reject]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
     const ok = !!b.dataset.approve;
@@ -942,7 +1193,7 @@ function bindCommon() {
   });
   document.querySelectorAll('[data-new]').forEach(b => b.onclick = () => openEditor(b.dataset.new, null));
   document.querySelectorAll('[data-edit]').forEach(b => b.onclick = (e) => {
-    if (e.target.closest('[data-toggle]')) return;
+    if (e.target.closest('[data-toggle],button,.thumbwrap')) return;
     const it = item(b.dataset.edit); if (it) openEditor(it.kind, it);
   });
   document.querySelectorAll('[data-toggle]').forEach(b => b.onclick = (e) => {
@@ -991,7 +1242,7 @@ function bindCommon() {
     });
   });
   document.querySelectorAll('[data-setpin]').forEach(b => b.onclick = openSetPin);
-  document.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => (isChild() && S.me.pinSet && B.checkPin) ? pinModal('יציאה מהמשפחה', 'בטלפון של ילד צריך קוד הורים כדי לצאת מהמשפחה.', (n) => {
+  document.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => (S.me.pinSet && B.checkPin) ? pinModal('יציאה מהמשפחה', 'צריך קוד הורים כדי לצאת מהמשפחה.', (n) => {
     if (!B.checkPin(n)) return toast('קוד לא נכון');
     MODAL = null; $('#modal-root').innerHTML = '';
     S = JSON.parse(B.reset()); OB = { step: 1 }; TAB = 'today'; render();
@@ -1167,18 +1418,33 @@ function openEditor(kind, it, pre) {
   }
 
   if (kind === 'task') {
-    const d = { mode: (base.days && base.days.length) ? 'repeat' : 'once', days: base.days ? base.days.slice() : [], date: base.date || today, pts: base.pts || 5, photo: base.photo ? 1 : 0 };
+    const d = { mode: (base.days && base.days.length) ? 'repeat' : 'once', days: base.days ? base.days.slice() : [], date: base.date || today, pts: base.pts || 5, photo: base.photo ? 1 : 0,
+      cat: catOf(base) || (isNew ? guessCat(base.title) : ''), catTouched: !!catOf(base) };
+    const catBtns = () => CAT_ORDER.map(k => `<button type="button" data-cat="${k}" class="${d.cat === k ? 'on' : ''}" style="--cc:${CATS[k].c}"><span class="ce">${CATS[k].e}</span>${CATS[k].n}</button>`).join('');
     openModal(`<h3>${isNew ? 'משימה חדשה' : 'עריכת משימה'}</h3>
       <label class="f" style="margin-top:0">מה צריך לעשות?</label><div class="titlewrap"><input class="in" id="f-title" placeholder="למשל: שיעורי בית במתמטיקה" value="${esc(base.title || '')}"><button type="button" class="mic-in" data-micin="1">🎤</button></div>
+      <label class="f">לאיזו קטגוריה זה שייך?</label><div class="catpick" id="f-cat">${catBtns()}</div>
       ${whenFields(d)}
       <label class="f">עד איזו שעה?</label><input class="in time" type="time" id="f-time" value="${esc(base.time || '20:00')}">
       ${isChild() ? `<div class="hint">⭐ ${isNew ? 'המשימה תהיה שווה' : 'המשימה שווה'} ${d.pts} נקודות. את הנקודות קובעים ההורים.</div>`
         : `<label class="f">כמה נקודות? (כל מספר)</label>${numPick('f-pts', d.pts, [1, 2, 3, 5, 7, 10, 15, 20], v => v + '⭐', 1)}
       <label class="f">📷 לבקש תמונה כשמסיימים?</label>${opts('photo', [0, 1], d.photo, v => v ? 'כן, עם תמונה' : 'בלי תמונה')}`}
-      <div class="hint">🔔 תזכורת חצי שעה לפני ובזמן. "בוצע" נשלח להורים לאישור – בזמן = כל הנקודות, באיחור = חצי. "לא בוצע" (או בלי סימון עד סוף היום) = מינוס חצי.</div>
+      <div class="hint">🔔 תזכורת חצי שעה לפני ובזמן. "בוצע" נשלח להורים לאישור – בזמן = כל הנקודות (ההורים יכולים להוסיף או להוריד). <b>באיחור = 0 נקודות</b>, וההורים מחליטים אם לתת או להוריד, וכמה. "לא בוצע" (או בלי סימון עד סוף היום) = מינוס חצי.</div>
+      ${!isNew && !isChild() ? '<div class="small muted" style="margin-top:8px">✏️ שינוי כאן חל מעכשיו והלאה. משימות שכבר סומנו שומרות על הנקודות שלהן (אפשר לשנות אותן במסך "היום").</div>' : ''}
       <div class="actions">${del}<button class="btn" data-save="1">שמירה</button></div>`, root => {
       bindPick(root, d);
       bindNum(root);
+      const catBox = root.querySelector('#f-cat');
+      const bindCats = () => catBox.querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
+        d.cat = b.dataset.cat; d.catTouched = true; catBox.classList.remove('need');
+        catBox.innerHTML = catBtns(); bindCats();
+      });
+      bindCats();
+      root.querySelector('#f-title').addEventListener('input', e => {
+        if (d.catTouched) return;
+        const g = guessCat(e.target.value);
+        if (g && g !== d.cat) { d.cat = g; catBox.innerHTML = catBtns(); bindCats(); }
+      });
       root.querySelector('[data-save]').onclick = () => {
         const title = root.querySelector('#f-title').value.trim();
         const time = root.querySelector('#f-time').value;
@@ -1188,12 +1454,13 @@ function openEditor(kind, it, pre) {
         if (!isChild()) {
           pts = readNum(root, 'f-pts', 1);
           if (pts == null) return toast('נקודות: מספר שלם בין 1 ל-999');
+          if (!d.cat) { catBox.classList.add('need'); catBox.scrollIntoView({ block: 'center' }); return toast('צריך לבחור קטגוריה'); }
         }
         const out = {};
         if (!readWhen(root, d, out)) return;
         MODAL = null; $('#modal-root').innerHTML = '';
         const extra = isChild() ? { pts, photo: !!base.photo } : { pts, photo: !!d.photo };
-        save(Object.assign(base, out, { id: base.id || uid('tk'), kind: 'task', title, time }, extra));
+        save(Object.assign(base, out, { id: base.id || uid('tk'), kind: 'task', title, time, cat: d.cat || 'other' }, extra));
         toast('המשימה נשמרה ✅');
       };
       bindDel(root, base);
