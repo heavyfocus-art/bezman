@@ -50,7 +50,8 @@ function uiPrefs() {
   if (UI) return UI;
   let p = {};
   try { p = JSON.parse((B.getPrefs && B.getPrefs()) || '{}') || {}; } catch (e) { p = {}; }
-  UI = Object.assign({ accent: 'auto', bg: 'lavender', size: 'm', order: DEF_ORDER.slice(), hidden: [], tabs: null }, p);
+  UI = Object.assign({ accent: 'auto', bg: 'lavender', size: 'm', order: DEF_ORDER.slice(), hidden: [], tabs: null, offTabs: [] }, p);
+  if (!Array.isArray(UI.offTabs)) UI.offTabs = [];
   // keep lists complete after app updates
   UI.order = UI.order.filter(k => SECTIONS[k]).concat(DEF_ORDER.filter(k => UI.order.indexOf(k) < 0));
   return UI;
@@ -65,6 +66,36 @@ function tabOrder() {
   // a tab added in a newer version goes next to its usual neighbour
   def.forEach((k, i) => { if (out.indexOf(k) < 0) out.splice(i ? out.indexOf(def[i - 1]) + 1 : 0, 0, k); });
   return out;
+}
+/** Screens that can't be closed: "today" and the settings (to open them again). */
+const KEEP_TABS = ['today', 'settings'];
+/** The bottom buttons a parent sees: closed screens left out. */
+function shownTabs() {
+  if (isChild()) return tabOrder();
+  const off = uiPrefs().offTabs;
+  return tabOrder().filter(k => KEEP_TABS.indexOf(k) >= 0 || off.indexOf(k) < 0);
+}
+const TAB_INFO = {
+  calendar: 'כל הילדים לפי ימים, וכיבוי משימה ליום אחד',
+  plan: 'שעונים, חוגים ומשימות קבועים',
+  report: 'סיכום נקודות ומשימות לפי תקופה',
+  rewards: 'פרסים ובקשות מימוש',
+};
+/** Parents: which screens appear at the bottom. Saved on this phone only. */
+function screensCard() {
+  const off = uiPrefs().offTabs;
+  return `<div class="sec-title"><h2>📱 המסכים שלי</h2></div>
+    <div class="card"><div class="small muted" style="margin-bottom:4px">מכבים מסכים שלא צריך – הם ייעלמו מהכפתורים למטה (רק בטלפון הזה). "היום" ו"הגדרות" תמיד נשארים.</div>
+    ${tabOrder().filter(k => KEEP_TABS.indexOf(k) < 0).map(k => `<div class="secrow"><div class="st"><b>${TABS_ALL[k][0]} ${TABS_ALL[k][1]}</b><span>${TAB_INFO[k] || ''}</span></div>
+      <button class="toggle ${off.indexOf(k) < 0 ? 'on' : ''}" data-tabonoff="${k}" aria-label="${TABS_ALL[k][1]}"></button></div>`).join('')}
+    <div class="small muted" style="margin-top:8px">במסך "היום" אפשר גם להסתיר חלקים ולשנות סדר: 🎨 למעלה.</div></div>`;
+}
+function toggleTab(k) {
+  const p = uiPrefs();
+  const i = p.offTabs.indexOf(k);
+  if (i >= 0) p.offTabs.splice(i, 1); else p.offTabs.push(k);
+  saveUi();
+  return i < 0;
 }
 
 /** Applies colors / background / text size. Only parents personalise; kids keep their own theme. */
@@ -120,8 +151,9 @@ function openDesign() {
         <span class="on">${SECTIONS[k]}</span>
         <button class="mv" data-up="${k}" ${i === 0 ? 'disabled' : ''}>▲</button>
         <button class="mv" data-down="${k}" ${i === p.order.length - 1 ? 'disabled' : ''}>▼</button></div>`).join('')}</div>
-    <label class="f">סדר הכפתורים בתחתית</label>
-    <div class="orderlist">${tabOrder().map((k, i, arr) => `<div class="ordrow">
+    <label class="f">הכפתורים בתחתית: להסתיר 👁️ ולשנות סדר</label>
+    <div class="orderlist">${tabOrder().map((k, i, arr) => `<div class="ordrow ${p.offTabs.indexOf(k) >= 0 && KEEP_TABS.indexOf(k) < 0 ? 'hid' : ''}">
+        ${KEEP_TABS.indexOf(k) < 0 ? `<button class="eye" data-teye="${k}" aria-label="להציג / להסתיר">${p.offTabs.indexOf(k) >= 0 ? '🚫' : '👁️'}</button>` : '<span class="eye" style="display:grid;place-items:center;opacity:.4">📌</span>'}
         <span class="on">${TABS_ALL[k][0]} ${TABS_ALL[k][1]}</span>
         <button class="mv" data-tup="${k}" ${i === 0 ? 'disabled' : ''}>▲</button>
         <button class="mv" data-tdown="${k}" ${i === arr.length - 1 ? 'disabled' : ''}>▼</button></div>`).join('')}</div>
@@ -146,10 +178,11 @@ function openDesign() {
     });
     root.querySelectorAll('[data-up]').forEach(b => b.onclick = () => { move(p.order, b.dataset.up, -1); refresh(); });
     root.querySelectorAll('[data-down]').forEach(b => b.onclick = () => { move(p.order, b.dataset.down, 1); refresh(); });
+    root.querySelectorAll('[data-teye]').forEach(b => b.onclick = () => { toggleTab(b.dataset.teye); refresh(); });
     root.querySelectorAll('[data-tup]').forEach(b => b.onclick = () => { p.tabs = tabOrder(); move(p.tabs, b.dataset.tup, -1); refresh(); });
     root.querySelectorAll('[data-tdown]').forEach(b => b.onclick = () => { p.tabs = tabOrder(); move(p.tabs, b.dataset.tdown, 1); refresh(); });
     root.querySelector('[data-dreset]').onclick = () => {
-      UI = { accent: 'auto', bg: 'lavender', size: 'm', order: DEF_ORDER.slice(), hidden: [], tabs: null };
+      UI = { accent: 'auto', bg: 'lavender', size: 'm', order: DEF_ORDER.slice(), hidden: [], tabs: null, offTabs: [] };
       Object.assign(p, UI); UI = p; refresh();
     };
   };
@@ -418,7 +451,7 @@ function catReport(s) {
 }
 function statsMini() {
   const s = kidStats(KID, 'week');
-  return `<div class="sec-title"><h2>📊 השבוע</h2><button class="add" data-tab="report">לדוח המלא</button></div>
+  return `<div class="sec-title"><h2>📊 השבוע</h2>${shownTabs().indexOf('report') >= 0 ? '<button class="add" data-tab="report">לדוח המלא</button>' : ''}</div>
     <div class="tiles mini4">
       <div class="tile good"><b>‎+${s.earned}</b><span>נקודות</span></div>
       <div class="tile"><b>${s.done}</b><span>משימות בוצעו</span></div>

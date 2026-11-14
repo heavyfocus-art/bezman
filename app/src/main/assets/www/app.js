@@ -367,17 +367,17 @@ function rowHtml(r, child, now) {
   } else {
     st = ts === 'rejected' ? `<span class="pill warn">↩️ לא אושר – אפשר לבצע ולסמן שוב</span>`
       : (now > r.t ? `<span class="pill warn">עבר הזמן</span> ${child ? 'אם תסמנ' + G('י', '') + ' עכשיו – ההורים יחליטו על הנקודות' : 'סימון עכשיו = ההורים מחליטים על הנקודות'}`
-        : `עד ${esc(it.time || 'סוף היום')} · ${base}⭐`);
+        : `עד ${esc(it.time || 'סוף היום')} · ${child && game().sub ? esc(game().sub(it)) : base + '⭐'}`);
     if (it.photo) st += ` <span class="small">· 📷 צריך תמונה</span>`;
     mark = `<div class="check"></div>`;
   }
   const btns = canMark ? `<div class="btns">
-      <button class="btn mint small" data-done="${esc(it.id)}" data-occ="${r.occ}">${it.photo ? '📷 ' : ''}בוצע ✅</button>
+      <button class="btn mint small" data-done="${esc(it.id)}" data-occ="${r.occ}">${it.photo ? '📷 ' : ''}${esc(game().done || 'בוצע ✅')}</button>
       <button class="btn danger small" data-notdone="${esc(it.id)}" data-occ="${r.occ}">לא בוצע ✕</button></div>` : '';
   const photo = r.log && r.log.photo ? `<div class="thumbwrap" data-photo="${esc(r.log.id)}"></div>` : '';
   return `<div class="row ${ts === 'approved' || ts === 'missed' ? 'done' : ''}${tap}">
     ${mark}
-    <div class="body"><div class="t1">${esc(it.title)}${catChip(it)}</div><div class="t2">${st}</div>${btns}</div>
+    <div class="body"><div class="t1">${child && game().tag ? (([n, c]) => `<span class="rar" style="--rc:${c}">${n}</span> `)(game().tag(it)) : ''}${esc(it.title)}${catChip(it)}</div><div class="t2">${st}</div>${btns}</div>
     ${photo}${side || (photo ? '' : `<div class="time">${esc(it.time || '')}</div>`)}</div>`;
 }
 /** "+5⭐" in green, "-3⭐" in red, "0⭐" in grey. */
@@ -476,6 +476,7 @@ function render() {
   applyDesign();
   bars();
   if ((TAB === 'report' || TAB === 'calendar') && isChild()) TAB = 'today';
+  if (shownTabs().indexOf(TAB) < 0) TAB = 'today'; // a screen the parent closed
   let body = '';
   if (TAB === 'today') body = isChild() ? childToday() : parentToday();
   else if (TAB === 'calendar') body = calendarScreen();
@@ -486,7 +487,7 @@ function render() {
   const pending = list('redeem').filter(r => r.status === 'pending').length;
   const badge = { today: !isChild() ? pendingTasks(true).length : 0, rewards: !isChild() && pending ? pending : 0 };
   app.innerHTML = body + (TAB === 'today' || TAB === 'plan' ? micFab() : '') + `
-  <nav>${tabOrder().map(k => navBtn(k, TABS_ALL[k][0], TABS_ALL[k][1], badge[k] || 0)).join('')}</nav>`;
+  <nav>${shownTabs().map(k => navBtn(k, TABS_ALL[k][0], TABS_ALL[k][1], badge[k] || 0)).join('')}</nav>`;
   bindCommon();
   fillPhotos();
   if (TAB === 'today') tickTimer = setInterval(() => { if (!MODAL && TAB === 'today') render(); }, 30000);
@@ -518,7 +519,7 @@ function hero(title, sub) {
   const ls = S.me.lastSync ? Math.round((Date.now() - S.me.lastSync) / 60000) : null;
   return `<div class="hero">
     <div class="top"><div><h1>${title}</h1><div class="date">${sub}</div></div>
-    <div style="display:flex;gap:6px">${!isChild() ? '<button class="sync" data-design="1" aria-label="עיצוב">🎨</button>' : ''}<button class="sync" data-sync="1">${S.me.syncErr ? '⚠️' : '🔄'} ${ls == null ? 'סנכרון' : ls < 1 ? 'עכשיו' : 'לפני ' + ls + ' דק׳'}</button></div></div>
+    <div style="display:flex;gap:6px">${!isChild() ? '<button class="sync" data-design="1" aria-label="עיצוב">🎨</button>' : '<button class="sync" data-kthemes="1" aria-label="בחירת עיצוב">🎨</button>'}<button class="sync" data-sync="1">${S.me.syncErr ? '⚠️' : '🔄'} ${ls == null ? 'סנכרון' : ls < 1 ? 'עכשיו' : 'לפני ' + ls + ' דק׳'}</button></div></div>
     <div class="chips">
       <div class="chip"><b>\u200E${sc.pts}</b><span>⭐ נקודות</span></div>
       <div class="chip"><b>${sc.streak}</b><span>🔥 ימים ברצף</span></div>
@@ -618,11 +619,15 @@ function childToday() {
     </div>`;
   }
   const noAlarm = !mine('alarm').length;
+  // game designs: a game picture made of today's real tasks instead of the plain "next" card
+  const gm = game();
+  const tt = todayTasks();
+  if (gm.board) next = gm.board({ now, rows, nx, tt, sc: score(), L: levelInfo(KID), name: S.me.name || kidName() });
   return hero(`${greet}, ${esc(S.me.name)} 👋`, dateLine()) + `<main>
     ${updateBanner()}${permBanner()}
     ${next}
     ${noAlarm ? `<div class="card center"><div style="font-size:34px">⏰</div><b>עוד אין שעון מעורר</b><p class="muted small">קובעים שעה, והשעון יצלצל עד שפותרים תרגיל קטן</p><button class="btn" data-new="alarm">לקבוע שעון מעורר</button></div>` : ''}
-    <div class="sec-title"><h2>היום שלי</h2><button class="add" data-new="task">+ משימה</button></div>
+    <div class="sec-title"><h2>${esc(gm.sec || 'היום שלי')}${tt.total ? ` <span class="cnt">${tt.done} מתוך ${tt.total}</span>` : ''}</h2><button class="add" data-new="task">+ משימה</button></div>
     <div class="card">${rows.length ? rows.map(r => rowHtml(r, true, now)).join('') : `<div class="empty"><div class="e">🌈</div>אין כלום להיום</div>`}</div>
     ${tomorrowCard(true)}
   </main>`;
@@ -771,6 +776,7 @@ function settingsScreen() {
     </div>
 
     ${!child ? securityCard() : ''}
+    ${!child ? screensCard() : ''}
 
     <div class="sec-title"><h2>🔐 הרשאות בטלפון</h2></div>
     <div class="card">
@@ -850,6 +856,64 @@ function pinPad() {
     <div class="pinpad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button type="button" data-pk="${n}">${n}</button>`).join('')}
       <button type="button" data-pk="del" aria-label="מחיקה">⌫</button><button type="button" data-pk="0">0</button><button type="button" data-pk="ok" aria-label="כניסה" style="background:var(--violet);color:var(--on-acc)">✓</button></div>`;
 }
+// ---------- drawing a pattern ----------
+let LOCKWAY = '';  // '' = the phone's choice (pattern if set), 'pin' = the parent chose to type the code
+function patternPad(id) {
+  return `<div class="pat" id="${id}"><svg class="pat-l" aria-hidden="true"></svg>${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<span class="pd" data-pd="${n}"><i></i></span>`).join('')}</div>`;
+}
+/** Draw with a finger over the 9 dots; onDone(“1452…”) when the finger lifts. Returns reset(error). */
+function bindPattern(el, onDone) {
+  const svg = el.querySelector('.pat-l');
+  const dots = [...el.querySelectorAll('[data-pd]')];
+  let seq = [], drawing = false, cur = null;
+  const center = d => { const r = d.getBoundingClientRect(), b = el.getBoundingClientRect(); return [r.left - b.left + r.width / 2, r.top - b.top + r.height / 2]; };
+  const draw = () => {
+    const pts = seq.map(n => center(dots[n - 1]));
+    if (cur && drawing) pts.push(cur);
+    svg.innerHTML = pts.length > 1 ? `<polyline points="${pts.map(p => p.join(',')).join(' ')}" />` : '';
+    dots.forEach((d, i) => d.classList.toggle('on', seq.indexOf(i + 1) >= 0));
+  };
+  const hit = (x, y) => {
+    const b = el.getBoundingClientRect();
+    dots.forEach((d, i) => {
+      const [cx, cy] = center(d);
+      if (Math.hypot(x - b.left - cx, y - b.top - cy) > 30 || seq.indexOf(i + 1) >= 0) return;
+      // passing over a dot in the middle adds it too (like Android)
+      const last = seq[seq.length - 1];
+      if (last) {
+        const r1 = Math.floor((last - 1) / 3), c1 = (last - 1) % 3, r2 = Math.floor(i / 3), c2 = i % 3;
+        if ((r1 + r2) % 2 === 0 && (c1 + c2) % 2 === 0) { const mid = ((r1 + r2) / 2) * 3 + (c1 + c2) / 2 + 1; if (seq.indexOf(mid) < 0) seq.push(mid); }
+      }
+      seq.push(i + 1);
+      if (navigator.vibrate) try { navigator.vibrate(12); } catch (e) {}
+    });
+  };
+  el.onpointerdown = e => { e.preventDefault(); el.classList.remove('bad'); seq = []; drawing = true; try { el.setPointerCapture(e.pointerId); } catch (x) {} hit(e.clientX, e.clientY); const b = el.getBoundingClientRect(); cur = [e.clientX - b.left, e.clientY - b.top]; draw(); };
+  el.onpointermove = e => { if (!drawing) return; hit(e.clientX, e.clientY); const b = el.getBoundingClientRect(); cur = [e.clientX - b.left, e.clientY - b.top]; draw(); };
+  el.onpointerup = el.onpointercancel = () => { if (!drawing) return; drawing = false; cur = null; draw(); if (seq.length) onDone(seq.join('')); };
+  return bad => { if (bad) { el.classList.add('bad'); setTimeout(() => { el.classList.remove('bad'); seq = []; draw(); }, 700); } else { seq = []; draw(); } };
+}
+function openSetPattern() {
+  let first = '';
+  const body = step => `<h3>✏️ ציור סיסמה</h3>
+    <p class="muted small" style="margin-top:-6px">${step === 1 ? 'מציירים צורה שמחברת לפחות 4 נקודות. בטלפון הזה אפשר יהיה להיכנס עם הציור במקום להקליד קוד.' : 'מציירים שוב את אותה צורה, לאימות'}</p>
+    ${patternPad('pat-set')}<div class="pinmsg" id="pat-msg"></div>
+    <div class="actions"><button class="btn light" data-c="no">ביטול</button></div>`;
+  const bind = (root, step) => {
+    root.querySelector('[data-c=no]').onclick = closeModal;
+    const reset = bindPattern(root.querySelector('#pat-set'), pat => {
+      const msg = root.querySelector('#pat-msg');
+      if (pat.length < 4) { msg.textContent = 'צריך לחבר לפחות 4 נקודות'; return reset(true); }
+      if (step === 1) { first = pat; const sh = $('#modal-root .sheet'); sh.innerHTML = '<div class="grab"></div>' + body(2); bind(sh, 2); return; }
+      if (pat !== first) { msg.textContent = 'הציור לא זהה – מתחילים מחדש'; first = ''; reset(true); setTimeout(() => { const sh = $('#modal-root .sheet'); if (sh) { sh.innerHTML = '<div class="grab"></div>' + body(1); bind(sh, 1); } }, 800); return; }
+      MODAL = null; $('#modal-root').innerHTML = '';
+      if (B.setPattern && B.setPattern(pat)) { LOCKWAY = ''; load(); toast('ציור הסיסמה נשמר ✏️🔒'); }
+      else toast('לא נשמר – צריך להיכנס עם קוד ההורים');
+    });
+  };
+  openModal(body(1), root => bind(root, 1));
+}
+
 function lockScreen() {
   const joining = S.me.unlocked === false;
   if (joining && !S.me.pinSet) {
@@ -860,8 +924,12 @@ function lockScreen() {
   return `<div class="ob">
     <div class="logo">🔒</div><h1>${joining ? 'קוד הורים' : 'כניסה למסך ההורים'}</h1>
     <div class="card">
-      <p class="muted center" style="margin:0">${joining ? 'הטלפון הזה הצטרף למשפחה כהורה. מקלידים את קוד ההורים כדי להמשיך.' : `שלום ${esc(S.me.name)} 👋 מקלידים את קוד ההורים`}</p>
+      ${!joining && S.me.pattern && LOCKWAY !== 'pin' ? `<p class="muted center" style="margin:0">שלום ${esc(S.me.name)} 👋 מציירים את הסיסמה</p>
+        ${patternPad('pat-in')}<div class="pinmsg" id="pin-msg">${pinWait() ? `יותר מדי ניסיונות. אפשר לנסות שוב בעוד ${pinWait()} שניות` : ''}</div>
+        <button class="btn light block" data-lockway="pin">🔢 כניסה עם קוד הורים</button>`
+      : `<p class="muted center" style="margin:0">${joining ? 'הטלפון הזה הצטרף למשפחה כהורה. מקלידים את קוד ההורים כדי להמשיך.' : `שלום ${esc(S.me.name)} 👋 מקלידים את קוד ההורים`}</p>
       ${pinPad()}
+      ${!joining && S.me.pattern ? '<button class="btn light block" style="margin-top:12px" data-lockway="pattern">✏️ כניסה עם ציור סיסמה</button>' : ''}`}
       ${!joining && S.me.bio ? `<button class="btn ghost block" style="margin-top:12px" data-bio="1">👆 כניסה בטביעת אצבע / פנים</button>` : ''}
       ${joining ? `<div class="actions"><button class="btn light" data-lockreset="1">זה לא הורה</button></div>` : ''}
     </div>
@@ -890,6 +958,17 @@ function bindLock() {
     const m = $('#pin-msg');
     if (m && !pinWait()) m.textContent = 'קוד לא נכון';
   });
+  const pat = $('#pat-in');
+  if (pat) {
+    const reset = bindPattern(pat, p => {
+      if (pinWait()) return reset(true);
+      if (B.unlockPattern && B.unlockPattern(p)) { toast('ברוכים הבאים 👋'); load(); return; }
+      reset(true);
+      const m = $('#pin-msg');
+      if (m) m.textContent = pinWait() ? `יותר מדי ניסיונות. אפשר לנסות שוב בעוד ${pinWait()} שניות` : 'הציור לא נכון';
+    });
+  }
+  document.querySelectorAll('[data-lockway]').forEach(b => b.onclick = () => { LOCKWAY = b.dataset.lockway === 'pin' ? 'pin' : ''; PINBUF = ''; render(); });
   const bio = $('[data-bio]');
   if (bio) bio.onclick = () => B.bio && B.bio();
   if (bio && !BIO_ASKED && S.me.session === false) { BIO_ASKED = true; setTimeout(() => B.bio && B.bio(), 300); }
@@ -932,6 +1011,8 @@ function securityCard() {
         <button class="toggle ${S.me.lockOn ? 'on' : ''}" data-lockon="1" aria-label="נעילת האפליקציה"></button></div>
       ${S.me.lockOn ? `<div class="secrow"><div class="st"><b>לנעול אחרי</b><span>זמן מחוץ לאפליקציה</span></div>
         <div class="seg" style="flex:none">${mins.map(m => `<button class="${(S.me.lockMin || 1) === m ? 'on' : ''}" data-lockmin="${m}">${m} דק׳</button>`).join('')}</div></div>` : ''}
+      ${S.me.lockOn ? `<div class="secrow"><div class="st"><b>✏️ ציור סיסמה</b><span>${S.me.pattern ? 'מוגדר – נכנסים בציור במקום קוד (רק בטלפון הזה)' : 'במקום להקליד קוד – מציירים צורה על 9 נקודות'}</span></div>
+        <div style="display:flex;gap:6px;flex:none">${S.me.pattern ? '<button class="btn danger small" data-patoff="1">להסיר</button>' : ''}<button class="btn light small" data-patset="1">${S.me.pattern ? 'לשנות' : 'לקבוע'}</button></div></div>` : ''}
       ${S.me.bioAvail && S.me.lockOn ? `<div class="secrow"><div class="st"><b>👆 טביעת אצבע / פנים</b><span>רק אם אין בטלפון הזה טביעת אצבע של אחד הילדים</span></div>
         <button class="toggle ${S.me.bio ? 'on' : ''}" data-bioset="1" aria-label="טביעת אצבע"></button></div>` : ''}
       ${S.me.lockOn ? `<button class="btn ghost block" style="margin-top:10px" data-locknow="1">🔒 לנעול עכשיו</button>` : ''}
@@ -1117,6 +1198,9 @@ const val = sel => { const e = $(sel); return e ? e.value : ''; };
 function bindCommon() {
   if (typeof bindCalendar === 'function') bindCalendar();
   document.querySelectorAll('[data-design]').forEach(b => b.onclick = openDesign);
+  document.querySelectorAll('[data-kthemes]').forEach(b => b.onclick = () => openThemes(kidInfo().theme, t => {
+    if (B.setProfile) { S = JSON.parse(B.setProfile('', t)); render(); toast('העיצוב הוחלף 🎨'); }
+  }));
   document.querySelectorAll('[data-mic]').forEach(b => b.onclick = () => startVoice('new'));
   document.querySelectorAll('[data-rep]').forEach(b => b.onclick = () => { REP = b.dataset.rep; render(); });
   document.querySelectorAll('[data-kidtheme]').forEach(b => b.onclick = () => {
@@ -1168,6 +1252,14 @@ function bindCommon() {
   });
   document.querySelectorAll('[data-lockmin]').forEach(b => b.onclick = () => { B.setLock(true, +b.dataset.lockmin); load(); });
   document.querySelectorAll('[data-bioset]').forEach(b => b.onclick = () => { B.setBio(!S.me.bio); load(); toast(!S.me.bio ? 'כניסה בטביעת אצבע כובתה' : 'אפשר להיכנס בטביעת אצבע 👆'); });
+  document.querySelectorAll('[data-patset]').forEach(b => b.onclick = () => B.setPattern ? openSetPattern() : toast('צריך לעדכן גרסה'));
+  document.querySelectorAll('[data-patoff]').forEach(b => b.onclick = () => confirmBox('להסיר את ציור הסיסמה?', 'הכניסה תהיה שוב עם קוד ההורים.', 'כן, להסיר', () => {
+    B.clearPattern(); load(); toast('ציור הסיסמה הוסר');
+  }, true));
+  document.querySelectorAll('[data-tabonoff]').forEach(b => b.onclick = () => {
+    const off = toggleTab(b.dataset.tabonoff);
+    render(); toast(off ? `המסך "${TABS_ALL[b.dataset.tabonoff][1]}" נסגר` : `המסך "${TABS_ALL[b.dataset.tabonoff][1]}" חזר`);
+  });
   document.querySelectorAll('[data-locknow]').forEach(b => b.onclick = () => { PINBUF = ''; B.lockNow(); setTimeout(load, 50); });
   document.querySelectorAll('[data-approve],[data-reject]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();

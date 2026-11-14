@@ -197,6 +197,46 @@ public final class Pin {
         return true;
     }
 
+    // ---------- drawing a pattern instead of typing the PIN (this phone only) ----------
+    /** A pattern = the dots in the order they were drawn, "1".."9", 4 to 9 dots, each dot once. */
+    static boolean okPattern(String p) {
+        if (p == null || !p.matches("[1-9]{4,9}")) return false;
+        for (int i = 0; i < p.length(); i++) if (p.indexOf(p.charAt(i)) != i) return false;
+        return true;
+    }
+
+    public static boolean patternOn(Context c) {
+        return !Store.getStr(c, "patHash").isEmpty();
+    }
+
+    /** Sets this phone's unlock pattern (only while the parent screens are open). */
+    public static boolean setPattern(Context c, String pat) {
+        if (!canAct(c) || !exists(c) || !okPattern(pat)) return false;
+        byte[] salt = new byte[16];
+        new SecureRandom().nextBytes(salt);
+        String s = Base64.encodeToString(salt, Base64.NO_WRAP);
+        Store.p(c).edit().putString("patSalt", s).putString("patHash", hash("pattern:" + pat, s)).apply();
+        return true;
+    }
+
+    public static boolean clearPattern(Context c) {
+        if (!canAct(c)) return false;
+        Store.p(c).edit().remove("patSalt").remove("patHash").apply();
+        return true;
+    }
+
+    /** Opens the app lock with the pattern. Wrong patterns count like wrong PINs. */
+    public static boolean openSessionPattern(Context c, String pat) {
+        if (!patternOn(c) || !unlocked(c) || waitSec(c) > 0 || pat == null) return false;
+        String h = hash("pattern:" + pat, Store.getStr(c, "patSalt"));
+        boolean ok = !h.isEmpty() && MessageDigest.isEqual(h.getBytes(), Store.getStr(c, "patHash").getBytes());
+        if (ok) {
+            succeeded(c);
+            sessionOk = true;
+        } else failed(c);
+        return ok;
+    }
+
     /** Opened with the phone's fingerprint / face. */
     static void openSessionBio() {
         sessionOk = true;

@@ -203,6 +203,7 @@ public final class Widgets {
             case "pet": return 0xFF8B63F2;
             case "space": return 0xFF2E7FD0;
             case "hero": return 0xFFC99A2E;
+            case "race": return 0xFFE8392F;
             default: return 0xFF7A5AF5;
         }
     }

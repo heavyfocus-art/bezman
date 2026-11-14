@@ -38,7 +38,7 @@
     const pinSet = !!(D.items.pin && D.items.pin.hash);
     const lockOn = D.me.lockOn !== false;
     const session = D.me.role === 'child' || !pinSet || !lockOn || !!SESSION;
-    const me = Object.assign({ lastSync: Date.now() - 4 * 60000, unlocked: true }, D.me, { pinSet, lockOn, session, lockMin: D.me.lockMin || 1, bio: !!D.me.bio, bioAvail: true, pinWait: 0 }, D.me.role === 'child' ? { kid: myKid(), theme: m.theme || 'purple', gender: m.gender || 'f' } : {});
+    const me = Object.assign({ lastSync: Date.now() - 4 * 60000, unlocked: true }, D.me, { pinSet, lockOn, session, lockMin: D.me.lockMin || 1, bio: !!D.me.bio, bioAvail: true, pinWait: 0, pattern: !!D.me.pat }, D.me.role === 'child' ? { kid: myKid(), theme: m.theme || 'purple', gender: m.gender || 'f' } : {});
     const c = CEL; CEL = 0;
     return JSON.stringify({ items: D.items, me, version: '1.0-test', apk: 'https://example.com/bezman.apk', now: Date.now(), celebrate: !!c });
   };
@@ -75,6 +75,9 @@
     lockNow() { SESSION = false; },
     bio() { setTimeout(() => { SESSION = true; window.onNative(); }, 400); },
     pinWait() { return 0; },
+    setPattern(p) { D.me.pat = p; persist(); return true; },
+    clearPattern() { delete D.me.pat; persist(); return true; },
+    unlockPattern(p) { if (D.me.pat && D.me.pat === p) { SESSION = true; return true; } return false; },
     pinWeak() { return false; },
     action(what, ref, occ) {
       if (what === 'approve' || what === 'reject') {

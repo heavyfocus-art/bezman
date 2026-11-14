@@ -356,7 +356,7 @@ public final class Store {
 
     /** The kids' designs (same list as THEMES in the screens). */
     static final String[] THEMES = {"purple", "orange", "yb", "quest", "questyb", "stickers", "neon", "neonyb",
-            "map", "pet", "space", "hero", "league"};
+            "map", "pet", "space", "hero", "league", "race"};
 
     static String okTheme(String t) {
         for (String x : THEMES) if (x.equals(t)) return t;

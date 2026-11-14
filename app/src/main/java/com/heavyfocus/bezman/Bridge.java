@@ -40,7 +40,8 @@ public class Bridge {
                 "outbox", Store.outbox(c).size(), "netTest", Store.getStr(c, "netTest"),
                 "netTestAt", Store.getLong(c, "netTestAt"),
                 "session", Pin.session(c), "lockOn", Pin.lockOn(c), "lockMin", Pin.lockMin(c),
-                "bio", Pin.bioOn(c), "bioAvail", a.bioAvailable(), "pinWait", Pin.waitSec(c));
+                "bio", Pin.bioOn(c), "bioAvail", a.bioAvailable(), "pinWait", Pin.waitSec(c),
+                "pattern", Pin.patternOn(c));
         if (Store.isChild(c)) {
             U.put(me, "kid", Store.myKid(c));
             U.put(me, "theme", Store.myTheme(c));
@@ -270,6 +271,24 @@ public class Bridge {
     @JavascriptInterface
     public boolean unlockPin(String pin) {
         boolean ok = Pin.unlocked(c) ? Pin.openSession(c, pin) : Pin.unlock(c, pin);
+        if (ok) Store.afterLocalChange(c);
+        return ok;
+    }
+
+    /** Unlock pattern (drawn dots "1".."9") for this phone's app lock. */
+    @JavascriptInterface
+    public boolean setPattern(String pat) {
+        return Pin.setPattern(c, pat);
+    }
+
+    @JavascriptInterface
+    public boolean clearPattern() {
+        return Pin.clearPattern(c);
+    }
+
+    @JavascriptInterface
+    public boolean unlockPattern(String pat) {
+        boolean ok = Pin.openSessionPattern(c, pat);
         if (ok) Store.afterLocalChange(c);
         return ok;
     }
