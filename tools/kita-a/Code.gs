@@ -43,7 +43,8 @@ function setup() {
   sh.getRange('F:G').setNumberFormat('dd/MM/yyyy');
   sh.getRange('J:J').setNumberFormat('dd/MM/yyyy HH:mm');
   [140, 120, 120, 70, 60, 110, 110, 120, 90, 130, 200].forEach((w, i) => sh.setColumnWidth(i + 1, w));
-  SpreadsheetApp.getUi().alert('הגיליון מוכן ✅\nעכשיו: תפריט "🎓 שלום כיתה א׳" ← "➕ קונה חדש".');
+  // a toast does not wait for a click (an alert would stop the script when it is run from the editor)
+  SpreadsheetApp.getActive().toast('עכשיו: תפריט "🎓 שלום כיתה א׳" ← "➕ קונה חדש".', 'הגיליון מוכן ✅', 15);
 }
 
 // ===== קודים =====
