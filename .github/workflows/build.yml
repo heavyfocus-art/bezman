@@ -3,6 +3,11 @@ name: build-apk
 on:
   push:
     branches: [main, master]
+    # the course website (docs/) and its tools don't change the app: no new app version for them
+    paths-ignore:
+      - 'docs/**'
+      - 'tools/**'
+      - '.github/**'
   workflow_dispatch: {}
 
 permissions:
