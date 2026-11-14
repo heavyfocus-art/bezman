@@ -579,17 +579,24 @@ function phonesCard() {
   const nv = newestVer();
   const ds = list('device').filter(d => Date.now() - (d.seen || 0) < 30 * 86400000)
     .sort((a, b) => (a.role === b.role ? 0 : a.role === 'parent' ? -1 : 1) || String(a.name).localeCompare(String(b.name)));
+  // the same person installed again (a new copy of the app = a new line): the older lines can be removed
+  const newest = {};
+  ds.forEach(d => { const k = d.role + '|' + d.name; if (!newest[k] || (d.seen || 0) > (newest[k].seen || 0)) newest[k] = d; });
+  const playOld = ds.some(d => d.src === 'play' && verNum(d.ver) < verNum(nv));
   const rows = ds.map(d => {
     const old = verNum(d.ver) < verNum(nv);
     const stale = Date.now() - (d.seen || 0) > 24 * 3600000;
     const me = d.id === 'dv:' + S.me.dev;
+    const dup = !me && newest[d.role + '|' + d.name] !== d && !isChild();
     return `<div class="row"><div class="ico ${d.role === 'parent' ? 'task' : 'alarm'}">${d.role === 'parent' ? '👨‍👩‍👧' : '🧒'}</div>
       <div class="body"><div class="t1">${esc(d.name)}${me ? ' <span class="small muted">(הטלפון הזה)</span>' : ''}</div>
       <div class="t2">גרסה ${esc(d.ver)} · ${d.src === 'play' ? 'מ-Google Play' : 'מקובץ התקנה'} · סונכרן ${agoTxt(d.seen)}</div></div>
-      ${old ? '<span class="pill warn">צריך לעדכן</span>' : stale ? '<span class="pill sun">לא סונכרן יום+</span>' : '<span class="pill ok">✓</span>'}</div>`;
+      ${dup ? `<button class="btn danger small" data-devdel="${esc(d.id)}">הסרה</button>` : old ? '<span class="pill warn">צריך לעדכן</span>' : stale ? '<span class="pill sun">לא סונכרן יום+</span>' : '<span class="pill ok">✓</span>'}</div>`;
   }).join('');
   return `<div class="sec-title"><h2>📱 הטלפונים במשפחה</h2></div>
     <div class="card">${rows || '<div class="empty small">עוד אין נתונים</div>'}
+      ${playOld ? `<div class="hint">▶️ טלפון שהותקן מ-<b>Google Play</b> מקבל רק גרסאות שהועלו ל-Play, ולכן לא מתעדכן מכאן. כדי לעדכן אותו: מוחקים את "בזמן" בטלפון הזה, מתקינים מהקישור (הגדרות ← "עדכון גרסה" בטלפון אחר ← שליחה), ומצטרפים שוב עם קוד המשפחה וקוד ההורים.</div>` : ''}
+      ${Object.keys(newest).length < ds.length ? '<div class="small muted" style="margin-top:8px">🧹 שורה כפולה (אותו שם) נוצרת כשמתקינים מחדש – אפשר להסיר את הישנות.</div>' : ''}
       <div class="small muted" style="margin-top:8px">טלפון שלא מופיע כאן מריץ גרסה ישנה (לפני ${esc(S.version)}) – צריך לעדכן אותו. הגרסה הכי חדשה: ${esc(nv)}</div></div>`;
 }
 
@@ -1316,7 +1323,16 @@ function bindCommon() {
   document.querySelectorAll('[data-ring]').forEach(b => b.onclick = () => B.pickRingtone && B.pickRingtone());
   document.querySelectorAll('[data-song]').forEach(b => b.onclick = () => B.pickSong && B.pickSong());
   document.querySelectorAll('[data-preview]').forEach(b => b.onclick = () => { if (B.previewRingtone) { B.previewRingtone(); toast('🎵 משמיע 5 שניות'); } });
-  document.querySelectorAll('[data-update]').forEach(b => b.onclick = () => B.openUpdate ? B.openUpdate() : B.openUrl(S.apk));
+  document.querySelectorAll('[data-update]').forEach(b => b.onclick = () => S.fromPlay ? playUpdate() : (B.openUpdate ? B.openUpdate() : B.openUrl(S.apk)));
+  document.querySelectorAll('[data-devdel]').forEach(b => b.onclick = () => {
+    const d = item(b.dataset.devdel);
+    if (!d) return;
+    confirmBox(`להסיר את השורה "${d.name}"?`, 'זו שורה ישנה מהתקנה קודמת. אם הטלפון הזה עוד פעיל, הוא יחזור לרשימה לבד.', 'כן, להסיר', () => {
+      const dev = d.id.slice(3), m = item('m_' + dev);
+      save([Object.assign({}, d, { del: true })].concat(m && m.role !== 'child' ? [Object.assign({}, m, { del: true })] : []));
+      toast('הוסר 🧹');
+    }, true);
+  });
   document.querySelectorAll('[data-playlink]').forEach(b => b.onclick = () => {
     const cur = item('cfg') || { id: 'cfg', kind: 'config' };
     openModal(`<h3>🔗 קישור ההצטרפות מ-Google Play</h3>
@@ -1341,6 +1357,17 @@ function bindCommon() {
   }, 'check') : confirmBox('לצאת מהמשפחה?', 'כל הנתונים בטלפון הזה יימחקו. אפשר להצטרף שוב עם הקוד.', 'כן, לצאת', () => {
     S = JSON.parse(B.reset()); OB = { step: 1 }; TAB = 'today'; render();
   }, true));
+}
+
+/** Installed from Google Play: Play has only the versions uploaded there – explain the two ways. */
+function playUpdate() {
+  openModal(`<h3>📥 עדכון גרסה</h3>
+    <p class="muted">"בזמן" בטלפון הזה הותקנה מ-<b>Google Play</b>. ב-Play מופיעות רק גרסאות שהועלו ל-Play, ולכן ייתכן שאין שם את הגרסה החדשה (${esc(newestVer())}).</p>
+    <div class="hint">כדי לקבל את הגרסה החדשה עכשיו:<br>1. מוחקים את "בזמן" מהטלפון (הנתונים שמורים בטלפונים האחרים במשפחה)<br>2. מתקינים מהקישור (כפתור למטה)<br>3. פותחים, בוחרים ${isChild() ? 'ילד/ה ומקלידים בדיוק את אותו שם' : 'הורה ומקלידים את קוד ההורים'}, ו"יש לי קוד": ${fmtCode(S.me.code)}</div>
+    <div class="actions"><button class="btn light" data-c="play">לבדוק ב-Play</button><button class="btn" data-c="apk">הורדה מהקישור</button></div>`, root => {
+    root.querySelector('[data-c=play]').onclick = () => { closeModal(); B.openUpdate ? B.openUpdate() : B.openUrl(S.apk); };
+    root.querySelector('[data-c=apk]').onclick = () => { closeModal(); B.openUrl(S.apk); };
+  });
 }
 
 function shareCode() {
