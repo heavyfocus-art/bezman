@@ -222,10 +222,10 @@ public final class Store {
         upsertLocal(c, d);
     }
 
-    /** The newest version on GitHub (checked at most every 6 hours), e.g. "1.12". */
+    /** The newest version on GitHub (checked at most every 30 minutes), e.g. "1.12". */
     static void checkLatest(Context c) {
         long now = System.currentTimeMillis();
-        if (now - getLong(c, "latestAt") < 6 * U.HOUR) return;
+        if (now - getLong(c, "latestAt") < 30 * U.MIN) return; // the "new version" banner shows within half an hour
         setLong(c, "latestAt", now);
         java.net.HttpURLConnection con = null;
         try {
